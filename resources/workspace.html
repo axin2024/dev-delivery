@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/workspace.css">
   <script src="/workspace.js" defer></script>
   <script src="/testing.js" defer></script>
+  <script src="/release.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -246,6 +247,11 @@
                 <label>制品 SHA-256<input name="sha256" required minlength="64" maxlength="64" pattern="[0-9A-Fa-f]{64}"></label>
                 <button>登记制品</button>
               </form>
+              <form id="upload-artifact">
+                <label>制品 ID<input name="artifact_id" type="number" min="1" required></label>
+                <label>制品文件（最大 8 MiB）<input name="artifact_file" type="file" required></label>
+                <button>校验并保存制品</button>
+              </form>
               <form id="register-environment">
                 <label>环境编码<input name="code" required></label>
                 <label>环境名称<input name="name" required></label>
@@ -324,6 +330,37 @@
               <label>复测结论<textarea name="note" required></textarea></label>
               <button>确认复测并关闭</button>
             </form>
+          </section>
+          <section class="panel">
+            <h2>发布候选</h2>
+            <details id="candidate-editor" hidden>
+              <summary>拟定发布候选</summary>
+              <form id="create-candidate">
+                <label>版本编码<input name="code" maxlength="64" required></label>
+                <label>候选标题<input name="title" maxlength="160" required></label>
+                <label>冻结基线 ID<input name="baseline_id" type="number" min="1" required></label>
+                <label>已登记制品 ID<input name="artifact_id" type="number" min="1" required></label>
+                <label>预发测试计划 ID<input name="test_plan_id" type="number" min="1" required></label>
+                <button>保存候选草稿</button>
+              </form>
+            </details>
+            <div id="candidates" class="item-list"></div>
+            <div id="candidate-detail"></div>
+            <form id="approve-candidate" hidden>
+              <label>审批说明<textarea name="note" maxlength="4000" required></textarea></label>
+              <button>批准此候选</button>
+            </form>
+            <details id="candidate-replacement-editor" hidden>
+              <summary>建立后继候选</summary>
+              <form id="replace-candidate">
+                <label>候选标题<input name="title" maxlength="160" required></label>
+                <label>冻结基线 ID<input name="baseline_id" type="number" min="1" required></label>
+                <label>已登记制品 ID<input name="artifact_id" type="number" min="1" required></label>
+                <label>预发测试计划 ID<input name="test_plan_id" type="number" min="1" required></label>
+                <button>保存后继并撤销旧候选批准</button>
+              </form>
+            </details>
+            <div id="candidate-approvals" class="item-list"></div>
           </section>
           <section class="panel">
             <h2>项目时间线</h2>

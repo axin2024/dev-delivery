@@ -41,8 +41,9 @@ final class Http
                 $this->respond(200, ['csrf_token' => $_SESSION['csrf'], 'actor' => $actor]);
                 return;
             }
-            $upload = $method === 'POST' && preg_match('~\A/api/projects/[1-9][0-9]{0,17}/test-plans/[1-9][0-9]{0,17}/reports\z~', $path);
-            $input = $method === 'GET' || $upload ? [] : $this->mutation();
+            $junit = $method === 'POST' && preg_match('~\A/api/projects/[1-9][0-9]{0,17}/test-plans/[1-9][0-9]{0,17}/reports\z~', $path);
+            $artifactContent = preg_match('~\A/api/projects/[1-9][0-9]{0,17}/artifacts/[1-9][0-9]{0,17}/content\z~', $path);
+            $input = $method === 'GET' || $junit || ($method === 'PUT' && $artifactContent) ? [] : $this->mutation();
             if ($method === 'POST' && $path === '/api/login') {
                 $actor = $accounts->authenticate($input);
                 session_regenerate_id(true);
@@ -63,16 +64,22 @@ final class Http
                     'POST' => [201, $accounts->create($actor, $input)->view()],
                     default => throw new Problem(405, 'method_not_allowed'),
                 };
-            } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/(artifacts|environments|test-cases|test-plans|test-reports|test-results|defects)(/.*)?\z~', $path, $testing)) {
+            } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/(artifacts|environments|test-cases|test-plans|test-reports|test-results|defects|candidates)(/.*)?\z~', $path, $testing)) {
+                if ($junit) {
+                    $input = $this->xmlUpload();
+                } elseif ($method === 'PUT' && $artifactContent) {
+                    $this->assertCsrf();
+                    $input = ['bytes' => $this->readPayload(['application/octet-stream'], 'artifact_content_type_required', BuildTargets::MAX_CONTENT_BYTES)];
+                }
                 [$status, $result] = (new TestingHttp($store, $projects, $audit))->dispatch(
-                    $method, $actor, (int) $testing[1], $testing[2] . ($testing[3] ?? ''), $upload ? $this->xmlUpload() : $input, $this->cursor());
+                    $method, $actor, (int) $testing[1], $testing[2] . ($testing[3] ?? ''), $input, $this->cursor());
             } else {
                 $baselines = new Baselines($store, $projects, $audit);
                 $changes = new Changes($store, $projects, $baselines, $audit);
                 $planning = new Planning($store, $projects, $audit);
                 [$status, $result] = $this->dispatch($method, $path, $actor, $projects, $baselines, $changes, $planning, $git, $gitEvents, $input);
             }
-            $this->respond($status, $result);
+            $this->respond($status, $result, $artifactContent ? 'artifact.bin' : 'junit.xml');
         } catch (Problem $error) {
             $this->respond($error->status, ['error' => $error->reason, 'details' => (object) $error->details]);
         } catch (Throwable $error) {
@@ -193,16 +200,8 @@ final class Http
     private function xmlUpload(): array
     {
         $this->assertCsrf();
-        $contentType = strtolower(trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0]));
-        if (!in_array($contentType, ['application/xml', 'text/xml'], true)) {
-            throw new Problem(415, 'xml_required');
-        }
-        $xml = file_get_contents('php://input', false, null, 0, JUnit::MAX_BYTES + 1);
-        if ($xml === false || strlen($xml) > JUnit::MAX_BYTES) {
-            throw new Problem(413, 'payload_too_large');
-        }
         return [
-            'xml' => $xml,
+            'xml' => $this->readPayload(['application/xml', 'text/xml'], 'xml_required', JUnit::MAX_BYTES),
             'source_key' => $_SERVER['HTTP_X_DELIVERY_REPORT_KEY'] ?? '',
             'artifact_sha256' => $_SERVER['HTTP_X_DELIVERY_ARTIFACT_SHA256'] ?? '',
             'attempt' => filter_var($_SERVER['HTTP_X_DELIVERY_ATTEMPT'] ?? '', FILTER_VALIDATE_INT),
@@ -213,11 +212,17 @@ final class Http
 
     private function rawJson(): string
     {
-        if (strtolower(trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0])) !== 'application/json') {
-            throw new Problem(415, 'json_required');
+        return $this->readPayload(['application/json'], 'json_required', 65_536);
+    }
+
+    private function readPayload(array $contentTypes, string $error, int $max): string
+    {
+        $contentType = strtolower(trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0]));
+        if (!in_array($contentType, $contentTypes, true)) {
+            throw new Problem(415, $error);
         }
-        $body = file_get_contents('php://input', false, null, 0, 65_537);
-        if ($body === false || strlen($body) > 65_536) {
+        $body = file_get_contents('php://input', false, null, 0, $max + 1);
+        if ($body === false || strlen($body) > $max) {
             throw new Problem(413, 'payload_too_large');
         }
         return $body;
@@ -240,13 +245,13 @@ final class Http
         return $cursor;
     }
 
-    private function respond(int $status, array|string $body): void
+    private function respond(int $status, array|string $body, string $filename = 'junit.xml'): void
     {
         http_response_code($status);
         header('Cache-Control: no-store');
         if (is_string($body)) {
             header('Content-Type: application/octet-stream');
-            header('Content-Disposition: attachment; filename="junit.xml"');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
             echo $body;
             return;
         }

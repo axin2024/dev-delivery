@@ -12,7 +12,10 @@ const eventTitles = {
   repository_registered: '登记代码仓库', work_item_claimed: '认领任务', git_snapshot_linked: '关联提交快照',
   test_case_revised: '修订用例', test_plan_created: '创建测试计划', artifact_registered: '登记制品',
   environment_registered: '登记环境', test_result_recorded: '记录测试结果', defect_opened: '登记缺陷',
-  defect_fixed: '提交修复', defect_closed: '复测关闭缺陷'
+  defect_fixed: '提交修复', defect_closed: '复测关闭缺陷', artifact_content_verified: '校验制品文件',
+  candidate_drafted: '拟定发布候选', candidate_frozen: '冻结候选范围', candidate_testing: '开始候选测试',
+  candidate_submitted: '提交候选审批', candidate_approved: '批准发布候选',
+  candidate_approval_revoked: '撤销候选批准', candidate_superseded: '后继候选取代当前版本'
 };
 const errors = {
   invalid_credentials: '租户、邮箱或密码有误。',
@@ -50,6 +53,15 @@ const errors = {
   junit_unsupported_xml: '该 XML 使用了不支持的声明或嵌套。',
   defect_retest_evidence_mismatch: '请选择修复制品在原环境中通过的对应用例结果。',
   defect_fix_requires_new_build: '请选择新的构建和制品摘要。',
+  artifact_digest_mismatch: '文件摘要与登记的 SHA-256 不一致。',
+  candidate_test_plan_target_mismatch: '测试计划的基线和制品必须与候选清单一致。',
+  candidate_requires_staging_plan: '请选择预发环境中的测试计划。',
+  candidate_coverage_missing: '该测试计划尚未覆盖基线中的全部标准。',
+  candidate_target_not_ready: '请核对制品文件和标准版本后再冻结或启动测试。',
+  candidate_gate_blocked: '候选门禁尚未通过，请核对测试结果和标准版本。',
+  candidate_gate_changed: '门禁证据有更新，请重新提交审批。',
+  candidate_state_conflict: '候选已不在这个操作对应的状态，请重新打开。',
+  candidate_targets_unchanged: '后继候选须选择新的基线、制品或测试计划。',
   csrf_invalid: '会话已过期，请刷新页面后登录。'
 };
 let busy = false;
@@ -587,6 +599,7 @@ function resetDeliveryViews() {
     'register-repository', 'import-git', 'link-git']) $(id).reset();
   for (const id of ['review-change', 'work-actions', 'import-editor', 'link-git']) $(id).hidden = true;
   resetTesting();
+  resetRelease();
 }
 
 function criterionInput(fields) {
@@ -607,7 +620,7 @@ async function viewProject(id) {
   for (const id of ['planning', 'change-editor', 'sprint-editor', 'work-editor', 'repository-editor']) $(id).hidden = !editable;
   await Promise.all([
     ...(editable ? [readScope()] : []), readBaselines(), readTimeline(),
-    readChanges(), readSprints(), readWork(), readRepositories(), readTesting()
+    readChanges(), readSprints(), readWork(), readRepositories(), readTesting(), readCandidates()
   ]);
   $('project-detail').hidden = false;
 }

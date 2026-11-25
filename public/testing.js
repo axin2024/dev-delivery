@@ -78,7 +78,13 @@ function readArtifacts() {
   return readPage('/artifacts', 'artifacts', item => {
     const renderer = document.createElement('details');
     renderer.append(textNode('summary', '制品 #' + item.id + ' · ' + item.name + ' · 构建 #' + item.build_id),
-      textNode('p', item.provider_run_id), textNode('code', item.sha256));
+      textNode('p', item.provider_run_id), textNode('code', item.sha256),
+      textNode('p', item.byte_length ? '文件摘要已校验 · ' + item.byte_length + ' 字节' : '待上传制品文件'));
+    if (item.byte_length && state.actor.roles.some(role => ['release_manager', 'tester', 'engineer'].includes(role))) {
+      const link = textNode('a', '下载已校验制品');
+      link.href = projectPath('/artifacts/') + item.id + '/content';
+      renderer.append(link);
+    }
     return renderer;
   });
 }

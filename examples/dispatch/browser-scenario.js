@@ -1,0 +1,441 @@
+async (page) => {
+    page.setDefaultTimeout(5000);
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    const button = name => page.getByRole('button', {name, exact: true});
+    const field = (form, name) => page.locator(form).locator('[name="' + name + '"]');
+    const set = async (form, values) => {
+        for (const [key, value] of Object.entries(values)) await field(form, key).fill(value);
+    };
+    const idle = () => page.waitForFunction(() => document.querySelector('main').getAttribute('aria-busy') === 'false');
+    const wait = async (selector, value) => {
+        try {
+            await page.locator(selector).getByText(value, {exact: false}).first().waitFor();
+        } catch (error) {
+            const message = await page.locator('#message').textContent();
+            throw new Error(error.message + ' | 工作台反馈 ' + message);
+        }
+    };
+    await set('#login', {tenant: 'browser-fixture', email: 'admin@example.test', password: 'Local-Only-Demo-517'});
+    await idle();
+    await button('登录').click();
+    await page.locator('#accounts summary').click();
+    for (const [role, name] of [['product', '产品负责人'], ['business', '业务代表'], ['engineer', '后端工程师'],
+        ['tester', '测试负责人'], ['release_manager', '发布经理'], ['external_reviewer', '合作方验收']]) {
+        await set('#create-account', {name, email: role + '@example.test', password: 'Local-Only-Demo-517'});
+        await field('#create-account', 'role').selectOption(role);
+        await page.locator('#create-account button').click();
+        await wait('#account-list', name);
+    }
+    const ids = await page.locator('#account-list li').allTextContents();
+    const account = name => ids.find(label => label.includes(name)).split('　')[0];
+    await page.locator('#new-project summary').click();
+    await set('#create-project', {
+        code: 'dispatch', title: '调度报表改造', charter: '冻结导出交付范围。',
+        product_owner_id: account('产品负责人'), business_signer_id: account('业务代表')
+    });
+    await page.locator('#create-project button').click();
+    await page.getByRole('heading', {name: '调度报表改造', exact: true}).waitFor();
+    await idle();
+    await page.getByText('章程与成员', {exact: true}).click();
+    for (const name of ['后端工程师', '测试负责人', '发布经理']) {
+        await set('#project-member', {member_id: account(name)});
+        await button('保存成员').click();
+        await wait('#message', '项目成员已更新');
+        await idle();
+    }
+    await page.getByText('添加需求和验收标准', {exact: true}).click();
+    await set('#create-requirement', {code: 'export', title: '导出', summary: '按日期导出调度记录。'});
+    await button('添加需求').click();
+    await wait('#scope', '待添加验收标准');
+    await set('#create-criterion', {code: 'c1', title: '列头', statement: '第一行须包含中文列头。'});
+    await button('添加验收标准').click();
+    await wait('#scope', '第一行须包含中文列头。');
+    await set('#freeze', {title: '初次冻结'});
+    await button('冻结基线').click();
+    await wait('#baseline-detail', '第一行须包含中文列头。');
+    const baselineId = (await page.locator('#baseline-detail').getByText('基线 ID #').textContent()).split('#')[1];
+    await page.getByText('修订验收标准', {exact: true}).click();
+    await page.locator('#scope textarea').fill('更改已冻结内容');
+    await button('提交修订').click();
+    await page.getByText('此条款已冻结，后续修订须走变更评审。', {exact: true}).waitFor();
+    await page.locator('#work-editor summary').click();
+    await set('#create-work', {code: 'design', title: '定义导出列', team: 'platform', owner_id: account('产品负责人'), effort: '2'});
+    await button('创建任务').click();
+    await wait('#work-detail', '定义导出列');
+    const designId = (await page.locator('#work-detail h3').textContent()).split('　')[0].slice(1);
+    await set('#create-work', {code: 'implement', title: '实现导出', team: 'frontend', owner_id: account('后端工程师'), effort: '2'});
+    await button('创建任务').click();
+    await wait('#work-detail', '实现导出');
+    const implementId = (await page.locator('#work-detail h3').textContent()).split('　')[0].slice(1);
+    await set('#save-dependency', {predecessor_id: designId, owner_id: account('产品负责人'), due_on: '2026-11-03'});
+    await button('保存依赖').click();
+    await wait('#work-detail', 'platform / design');
+    await page.locator('#work-items').getByRole('button', {name: /design/}).click();
+    await wait('#work-detail', '定义导出列');
+    await set('#save-dependency', {predecessor_id: implementId, owner_id: account('产品负责人'), due_on: '2026-11-03'});
+    await button('保存依赖').click();
+    await wait('#work-detail', '循环任务');
+    await button('删除依赖').click();
+    await page.locator('#work-detail .alert').waitFor({state: 'hidden'});
+    await page.locator('#sprint-editor summary').click();
+    await set('#create-sprint', {team: 'platform', code: 'first', title: '平台首期', starts_on: '2026-11-01', ends_on: '2026-11-02', capacity: '3'});
+    await button('创建迭代').click();
+    await wait('#sprint-detail', '平台首期');
+    const sprintId = (await page.locator('#sprint-detail h3').textContent()).split('　')[0].slice(1);
+    await set('#schedule-work', {sprint_id: sprintId});
+    await button('保存排期').click();
+    await wait('#sprints', '2 / 3 点');
+    await page.locator('#case-editor summary').click();
+    await set('#create-case', {code: 'headers', title: '列头用例', steps: '请求并读取第一行', expected_result: '中文列头'});
+    await button('登记用例').click();
+    await wait('#test-cases', '列头用例');
+    const caseVersion = (await page.locator('#test-case-detail').getByText('当前 v1').textContent()).split('#')[1];
+    await page.locator('#repository-editor summary').click();
+    await set('#register-repository', {name: '调度导出', provider_repository_id: 'dispatch-fixture'});
+    await button('登记仓库').click();
+    await wait('#repository-detail', '调度导出');
+    const repositoryId = (await page.locator('#repository-detail h3').first().textContent()).split('#')[1].split('　')[0];
+    await page.locator('#import-editor summary').click();
+    const commit = '1234567890abcdef1234567890abcdef12345678';
+    await set('#import-git', {event: JSON.stringify({version: 1, provider: 'github', provider_repository_id: 'dispatch-fixture',
+        event_id: 'browser-first', type: 'ref.updated', data: {branch: 'feature/export', before_sha: null, before_snapshot_id: null,
+            commit_sha: commit, forced: false, message: '验证工作台导入'}})});
+    await button('导入回执').click();
+    await wait('#snapshot-detail', commit);
+    const snapshotId = (await page.locator('#snapshot-detail h3').textContent()).split('#')[1].split('　')[0];
+    const repoEvent = (type, event_id, data) => JSON.stringify({version: 1, provider: 'github', provider_repository_id: 'dispatch-fixture', type, event_id, data});
+    const importEvent = async (event) => {
+        await set('#import-git', {event});
+        await button('导入回执').click();
+        await wait('#message', '已记录');
+        await idle();
+    };
+    const build = async (snap, sha, runId, runSequence) => {
+        await importEvent(repoEvent('build.updated', runId, {snapshot_id: Number(snap), commit_sha: sha,
+            run_id: runId, run_sequence: runSequence, status: 'passed'}));
+        return (await page.locator('#snapshot-detail').getByText('构建 #').textContent()).split('#')[1].split(' ·')[0];
+    };
+    const firstBuild = await build(snapshotId, commit, 'browser-h1', 1);
+    const nextCommit = 'abcdef1234567890abcdef1234567890abcdef12';
+    await importEvent(repoEvent('ref.updated', 'browser-next', {branch: 'feature/export', before_sha: commit,
+        before_snapshot_id: Number(snapshotId), commit_sha: nextCommit, forced: false, message: '第二次构建'}));
+    const nextSnapshot = (await page.locator('#snapshot-detail h3').textContent()).split('#')[1].split('　')[0];
+    const secondBuild = await build(nextSnapshot, nextCommit, 'browser-h2', 2);
+    await page.locator('#change-editor summary').click();
+    await field('#propose-change', 'criterion_id').selectOption({index: 1});
+    await set('#propose-change', {statement: '第一行须包含中文列头和导出日期。', reason: '导出日期进入范围'});
+    await button('提交评审').click();
+    await wait('#change-detail', '缺少关联');
+    await wait('#change-detail', 'headers');
+    await wait('#message', '等待业务签收人评审');
+    await button('退出').click();
+    await set('#login', {tenant: 'browser-fixture', email: 'business@example.test', password: 'Local-Only-Demo-517'});
+    await button('登录').click();
+    await page.locator('#projects').getByRole('button', {name: /dispatch\s+调度报表改造/}).click();
+    await page.locator('#baselines').getByRole('button', {name: /B1\s+初次冻结/}).click();
+    await wait('#baseline-detail', '第一行须包含中文列头。');
+    await page.locator('#changes').getByRole('button', {name: /导出日期进入范围/}).click();
+    await set('#review-change', {note: '批准日期变更'});
+    await button('确认评审').click();
+    await wait('#change-detail', '已批准');
+    await wait('#work-items', '待重新确认');
+    await wait('#test-cases', '待重新确认');
+    if (await page.locator('#planning').isVisible() || errors.length) throw new Error(JSON.stringify(errors));
+    await idle();
+    await button('退出').click();
+    await set('#login', {tenant: 'browser-fixture', email: 'engineer@example.test', password: 'Local-Only-Demo-517'});
+    await button('登录').click();
+    await page.locator('#projects').getByRole('button', {name: /dispatch\s+调度报表改造/}).click();
+    await page.locator('#work-items').getByRole('button', {name: /implement/}).click();
+    await button('认领任务').click();
+    await wait('#work-detail', '已认领');
+    await set('#link-git', {repository_id: repositoryId, snapshot_id: snapshotId});
+    await button('关联提交').click();
+    await wait('#git-links', '调度导出 / feature/export');
+    await page.locator('#git-links').getByRole('button', {name: /调度导出/}).click();
+    await wait('#snapshot-detail', '验证工作台导入');
+    await idle();
+    const openAs = async (role) => {
+        await button('退出').click();
+        await set('#login', {tenant: 'browser-fixture', email: role + '@example.test', password: 'Local-Only-Demo-517'});
+        await button('登录').click();
+        await page.locator('#projects').getByRole('button', {name: /dispatch\s+调度报表改造/}).click();
+        await page.getByRole('heading', {name: '调度报表改造', exact: true}).waitFor();
+        await idle();
+    };
+    await openAs('product');
+    await set('#freeze', {title: '日期范围已冻结'});
+    await button('冻结基线').click();
+    await wait('#baseline-detail', '日期范围已冻结');
+    const fixedBaseline = (await page.locator('#baseline-detail').getByText('基线 ID #').textContent()).split('#')[1];
+    await idle();
+    await openAs('tester');
+    await page.locator('#test-cases').getByRole('button', {name: /列头用例/}).click();
+    await set('#revise-case', {expected_result: '中文列头与导出日期'});
+    await button('保存用例新版本').click();
+    await wait('#test-case-detail', '当前 v2');
+    const fixedVersion = (await page.locator('#test-case-detail').getByText('当前 v2').textContent()).split('#')[1];
+    await idle();
+    await openAs('release_manager');
+    await page.locator('#test-target-editors summary').click();
+    await set('#register-environment', {code: 'qa', name: '报表预发'});
+    await field('#register-environment', 'stage').selectOption('staging');
+    await button('登记环境').click();
+    await wait('#environments', '报表预发');
+    const envId = (await page.locator('#environments p').textContent()).split('#')[1].split(' ·')[0];
+    await set('#register-environment', {code: 'dev', name: '报表开发'});
+    await field('#register-environment', 'stage').selectOption('development');
+    await button('登记环境').click();
+    await wait('#environments', '报表开发');
+    const devId = (await page.locator('#environments p').filter({hasText: '报表开发'}).textContent()).split('#')[1].split(' ·')[0];
+    await set('#register-environment', {code: 'prod', name: '报表生产'});
+    await field('#register-environment', 'stage').selectOption('production');
+    await button('登记环境').click();
+    await wait('#environments', '报表生产');
+    const prodId = (await page.locator('#environments p').filter({hasText: '报表生产'}).textContent()).split('#')[1].split(' ·')[0];
+    const artifacts = [];
+    for (const [name, buildId, bytes, sha256] of [
+        ['初版同款制品', firstBuild, 'dispatch 1', 'edff3aeb1d2c714edb92ef8427aee2a1eccf145f6dbed7672aca9cb3ae6dc794'],
+        ['修复制品', secondBuild, 'dispatch 2', '823dea2b56f58630ee8f6cc91f9975227eb3cd9446dd36e6de2632b2181b7480']
+    ]) {
+        await set('#register-artifact', {name, build_id: buildId, sha256});
+        await button('登记制品').click();
+        await wait('#artifacts', name);
+        const label = await page.locator('#artifacts summary').filter({hasText: name}).textContent();
+        const artifactId = label.split('#')[1].split(' ·')[0];
+        artifacts.push(artifactId);
+        await set('#upload-artifact', {artifact_id: artifactId});
+        await field('#upload-artifact', 'artifact_file').setInputFiles({name: 'dispatch.bin', mimeType: 'application/octet-stream', buffer: Buffer.from(bytes)});
+        await button('校验并保存制品').click();
+        await wait('#message', '已校验并保存制品文件');
+        await idle();
+    }
+
+    await openAs('tester');
+    const createPlan = async (title, code, artifactId, scopeId, versionId) => {
+        if (!await page.locator('#test-plan-editor').evaluate(node => node.open)) await page.locator('#test-plan-editor summary').click();
+        await set('#create-test-plan', {name: title, code, baseline_id: scopeId, artifact_id: artifactId,
+            environment_id: envId, case_version_ids: versionId});
+        await page.locator('#create-test-plan button').click();
+        await wait('#test-plan-detail', title);
+        await idle();
+        return (await page.locator('#test-plan-detail').getByRole('heading', {name: /^计划 #/}).textContent()).split('#')[1].split('　')[0];
+    };
+    const junit = async (name, result) => {
+        const summary = page.getByText('导入 JUnit XML', {exact: true});
+        if (!await summary.evaluate(node => node.parentElement.open)) await summary.click();
+        await set('#import-junit', {source_key: name, attempt: '1', xml: '<testsuite><testcase name="headers">' + result + '</testcase></testsuite>'});
+        await button('导入 JUnit 报告').click();
+        await wait('#test-report-detail', name);
+        await idle();
+    };
+    await createPlan('初版回归', 'initial-qa', artifacts[0], baselineId, caseVersion);
+    await junit('initial-failed', '<failure message="原始列头失败"/>');
+    await wait('#test-report-detail', '原始列头失败');
+    await button('使用此失败结果登记缺陷').click();
+    await set('#open-defect', {title: '列头缺失', description: 'Excel 导出需要完整表头'});
+    await page.locator('#open-defect button').click();
+    await wait('#defect-detail', '待修复');
+    await idle();
+
+    await openAs('engineer');
+    await page.locator('#defects').getByRole('button', {name: /列头缺失/}).click();
+    await set('#fix-defect', {artifact_id: artifacts[1], note: '输出所有表头'});
+    await button('提交修复').click();
+    await wait('#defect-detail', '待复测');
+    await idle();
+    await openAs('tester');
+    const fixedPlan = await createPlan('修复回归', 'fixed-qa', artifacts[1], fixedBaseline, fixedVersion);
+    await wait('#test-plan-detail', '缺少执行记录 1');
+    await junit('fixed-passed', '');
+    await wait('#test-plan-detail', '测试门禁已通过');
+    const passedId = (await page.locator('#test-report-detail').getByText('结果 #').textContent()).split('#')[1];
+    await page.locator('#defects').getByRole('button', {name: /列头缺失/}).click();
+    await set('#close-defect', {retest_result_id: passedId, note: '两次导出均通过'});
+    await button('确认复测并关闭').click();
+    await wait('#defect-detail', '复测通过');
+    await button('查看原失败报告').click();
+    await wait('#test-report-detail', '原始列头失败');
+    await idle();
+    const nextPlan = await createPlan('候选替换回归', 'replacement-qa', artifacts[0], fixedBaseline, fixedVersion);
+
+    await openAs('release_manager');
+    await page.locator('#candidate-editor summary').click();
+    await set('#create-candidate', {code: 'release-1', title: '调度报表发布', baseline_id: fixedBaseline,
+        artifact_id: artifacts[1], test_plan_id: fixedPlan});
+    await button('保存候选草稿').click();
+    await wait('#candidate-detail', '草稿');
+    await button('冻结候选范围').click();
+    await wait('#candidate-detail', '范围已冻结');
+    await button('开始候选测试').click();
+    await wait('#candidate-detail', '测试中');
+    await button('提交候选审批').click();
+    await wait('#candidate-detail', '待审批');
+    await idle();
+    await openAs('product');
+    await page.locator('#candidates').getByRole('button', {name: /调度报表发布/}).click();
+    await set('#approve-candidate', {note: '已核对用例和制品'});
+    await button('批准此候选').click();
+    await wait('#candidate-detail', '当前审批有效');
+    await idle();
+    await openAs('release_manager');
+    await page.locator('#candidates').getByRole('button', {name: /调度报表发布/}).click();
+    await button('使用候选申请部署').click();
+    await set('#request-deployment', {environment_id: devId, request_key: 'local-export', reason: '独立浏览器环境演练'});
+    await button('登记部署请求').click();
+    await wait('#deployment-detail', '待执行');
+    await page.locator('#deployment-timeout summary').click();
+    await set('#mark-deployment-unknown', {reason: '模拟工具回包超时'});
+    await button('登记结果待核实').click();
+    await wait('#deployment-detail', '待核实');
+    await page.getByText('按请求键查单', {exact: true}).click();
+    await set('#lookup-deployment', {environment_id: devId, request_key: 'local-export'});
+    await button('查询部署状态').click();
+    await idle();
+    await page.locator('#deployment-import summary').click();
+    const receipt = JSON.parse(await field('#import-deployment-receipt', 'receipt').inputValue());
+    await set('#import-deployment-receipt', {receipt: JSON.stringify({...receipt, event_id: 'dispatch-queried',
+        status: 'succeeded', sequence: 2, external_run_id: 'local-tool'})});
+    await button('导入部署回执').click();
+    await wait('#deployment-detail', '已成功');
+    await wait('#deployment-receipts', 'dispatch-queried');
+    await idle();
+    const oldDevHead = receipt.deployment_id;
+    await page.locator('#candidate-replacement-editor summary').click();
+    await set('#replace-candidate', {title: '调度报表替换候选', artifact_id: artifacts[0], test_plan_id: nextPlan});
+    await button('保存后继并撤销旧候选批准').click();
+    await wait('#candidate-detail', '调度报表替换候选');
+    await button('查看前一版候选').click();
+    await wait('#candidate-detail', '已被后继取代');
+    await button('查看审批记录').click();
+    await wait('#candidate-approvals', '已撤销');
+    await idle();
+
+    if (!await page.locator('#candidate-editor').evaluate(node => node.open)) await page.locator('#candidate-editor summary').click();
+    await set('#create-candidate', {code: 'acceptance-1', title: '调度报表生产签收', baseline_id: fixedBaseline,
+        artifact_id: artifacts[1], test_plan_id: fixedPlan});
+    await button('保存候选草稿').click();
+    await wait('#candidate-detail', '调度报表生产签收');
+    await button('冻结候选范围').click();
+    await wait('#candidate-detail', '范围已冻结');
+    await button('开始候选测试').click();
+    await wait('#candidate-detail', '测试中');
+    await button('提交候选审批').click();
+    await wait('#candidate-detail', '待审批');
+    await idle();
+    await openAs('product');
+    await page.locator('#candidates').getByRole('button', {name: /调度报表生产签收/}).click();
+    await set('#approve-candidate', {note: '批准生产签收演练'});
+    await button('批准此候选').click();
+    await wait('#candidate-detail', '当前审批有效');
+    await idle();
+
+    const productionCandidate = (await page.locator('#candidate-detail h3').textContent()).match(/#(\d+)/)[1];
+    await page.locator('#milestone-editor summary').click();
+    await set('#create-milestone', {code: 'acceptance', title: '报表交付里程碑', baseline_id: fixedBaseline, candidate_id: productionCandidate,
+        environment_id: prodId, owner_id: account('后端工程师'), due_on: '2020-01-01'});
+    await button('保存里程碑').click();
+    await wait('#milestone-detail', '等待上线');
+    await idle();
+    await openAs('release_manager');
+    await page.locator('#candidates').getByRole('button', {name: /调度报表生产签收/}).click();
+    const promote = async (environment, head, source, key) => {
+        await button('使用候选申请部署').click();
+        await set('#request-deployment', {environment_id: environment, expected_head_id: String(head || ''),
+            promotion_source_id: String(source || ''), request_key: key, reason: '签收前的晋级演练'});
+        await button('登记部署请求').click();
+        await wait('#deployment-detail', '待执行');
+        await idle();
+        await page.locator('#deployment-import summary').click();
+        const template = JSON.parse(await field('#import-deployment-receipt', 'receipt').inputValue());
+        for (const [status, sequence, label] of [['running', 1, '执行中'], ['succeeded', 2, '已成功']]) {
+            await set('#import-deployment-receipt', {receipt: JSON.stringify({...template, event_id: key + '-' + sequence,
+                status, sequence, external_run_id: key + '-tool'})});
+            await button('导入部署回执').click();
+            await wait('#deployment-detail', label);
+            await idle();
+        }
+        return template.deployment_id;
+    };
+    const devDelivery = await promote(devId, oldDevHead, null, 'signoff-dev');
+    const stagingDelivery = await promote(envId, null, devDelivery, 'signoff-qa');
+    const productionDelivery = await promote(prodId, null, stagingDelivery, 'signoff-prod');
+    await openAs('business');
+    await page.locator('#milestones').getByRole('button', {name: /报表交付里程碑/}).click();
+    await wait('#milestone-detail', '已逾期 · 当前环节 等待业务签收');
+    await page.locator('#signoffs').getByRole('button', {name: /acceptance-1/}).click();
+    await wait('#signoff-detail', '1 项标准待处理');
+    await button('查看追溯矩阵').click();
+    await wait('#signoff-report', '生产 → 预发 → 开发');
+    await wait('#signoff-report', '与复测');
+    await button('填写业务结论').click();
+    await field('#signoff-decision', 'decision').selectOption('blocked');
+    await set('#signoff-decision', {note: '业务名称待统一'});
+    await button('保存业务结论').click();
+    await wait('#signoff-criteria', '业务名称待统一');
+    await button('填写业务结论').click();
+    await field('#signoff-decision', 'decision').selectOption('waived');
+    const due = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    await set('#signoff-decision', {note: '同意临时使用现有表头', responsible_id: account('后端工程师'), retest_due_on: due});
+    await button('保存业务结论').click();
+    await wait('#signoff-criteria', '后端工程师');
+    await button('查看结论历史').click();
+    await wait('#signoff-history', '业务名称待统一');
+    await button('查看追溯矩阵').click();
+    await button('归档交付报告').click();
+    await wait('#signoff-detail', '报告已归档');
+    const downloadable = page.getByRole('link', {name: '下载归档报告 JSON'});
+    const downloadPromise = page.waitForEvent('download');
+    await downloadable.click();
+    const download = await downloadPromise;
+    if (download.suggestedFilename() !== 'delivery-report-' + productionDelivery + '.json') throw new Error('交付报告下载文件名不正确');
+    await idle();
+    await openAs('product');
+    await page.locator('#milestones').getByRole('button', {name: /报表交付里程碑/}).click();
+    await wait('#milestone-detail', '已逾期签收');
+    await button('保存当前周期快照').click();
+    await wait('#milestone-metrics', '已签收');
+    await idle();
+    await page.locator('#milestone-ownership-editor summary').click();
+    await set('#transfer-milestone-owner', {next_owner_id: account('产品负责人'), reason: '交付后的维护移交'});
+    await button('移交里程碑').click();
+    await wait('#milestone-ownership', '后端工程师 → 产品负责人');
+    await page.locator('#signoffs').getByRole('button', {name: /acceptance-1/}).click();
+    await button('用此报告生成外部交付包').click();
+    await page.locator('#package-criteria').getByRole('checkbox').check();
+    await set('#create-package', {title: '合作方发布验收'});
+    await button('保存外部交付包').click();
+    await wait('#review-package-detail', '合作方发布验收');
+    await idle();
+    await set('#grant-review-package', {reviewer_id: account('合作方验收'), expires_on: due});
+    await button('授予交付包访问权').click();
+    await wait('#review-grants', '已授权至');
+    await idle();
+
+    const openReviewer = async () => {
+        await button('退出').click();
+        await set('#login', {tenant: 'browser-fixture', email: 'external_reviewer@example.test', password: 'Local-Only-Demo-517'});
+        await button('登录').click();
+        await page.getByRole('heading', {name: '外部验收交付包', exact: true}).waitFor();
+        await idle();
+        if (await page.locator('#workspace').isVisible()) throw new Error('外部验收人可以查看内部项目工作台');
+    };
+    await openReviewer();
+    await page.locator('#external-packages').getByRole('button', {name: /合作方发布验收/}).click();
+    await wait('#external-package-detail', '合作方发布验收');
+    const externalDownload = page.waitForEvent('download');
+    await page.getByRole('link', {name: '下载交付包 JSON'}).click();
+    if (!(await externalDownload).suggestedFilename().startsWith('review-package-')) throw new Error('外部交付包文件名不正确');
+    await idle();
+    await openAs('product');
+    await page.locator('#review-packages').getByRole('button', {name: /合作方发布验收/}).click();
+    await button('撤回此授权').click();
+    await wait('#review-grants', '已撤回');
+    await idle();
+    await openReviewer();
+    await wait('#external-packages', '暂无记录');
+    if (errors.length) throw new Error(JSON.stringify(errors));
+    await idle();
+    return 'BROWSER_ACCEPTANCE_PASSED';
+}

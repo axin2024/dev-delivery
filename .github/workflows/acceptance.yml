@@ -1,0 +1,100 @@
+name: Acceptance
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  mysql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_RANDOM_ROOT_PASSWORD: '1'
+          MYSQL_DATABASE: delivery_test_ci
+          MYSQL_USER: delivery_test
+          MYSQL_PASSWORD: local-ci-only-password
+        ports:
+          - 3306/tcp
+        options: >-
+          --health-cmd="mysqladmin --protocol=tcp ping --silent"
+          --health-interval=5s
+          --health-timeout=4s
+          --health-retries=24
+    env:
+      DELIVERY_DB_USER: delivery_test
+      DELIVERY_DB_PASSWORD: local-ci-only-password
+      DELIVERY_COOKIE_SECURE: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_mysql, xmlreader
+          coverage: none
+      - name: Set the test database address
+        env:
+          MYSQL_TEST_PORT: ${{ job.services.mysql.ports[3306] }}
+        run: echo "DELIVERY_DSN=mysql:host=127.0.0.1;port=$MYSQL_TEST_PORT;dbname=delivery_test_ci;charset=utf8mb4" >> "$GITHUB_ENV"
+      - name: PHP and JavaScript syntax
+        run: |
+          git ls-files -z '*.php' | xargs -0 -r -n1 php -l
+          git ls-files -z '*.js' | xargs -0 -r -n1 node --check
+      - name: Install baseline and migrate
+        run: |
+          baseline="$(mktemp -d)"
+          git archive f552372 -- bin src database | tar -xf - -C "$baseline"
+          php "$baseline/bin/delivery.php" migrate
+          php bin/delivery.php migrate
+          test "$(php bin/delivery.php migrate)" = '{"applied":[]}'
+          php bin/delivery.php health
+      - name: Start two servers and run acceptance
+        run: |
+          export DELIVERY_CONNECTOR_MASTER_KEY="$(openssl rand -hex 32)"
+          php -S 127.0.0.1:8080 -t public public/index.php > /tmp/delivery-main.log 2>&1 &
+          primary=$!
+          php -S 127.0.0.1:8081 -t public public/index.php > /tmp/delivery-peer.log 2>&1 &
+          peer=$!
+          trap 'kill "$primary" "$peer" 2>/dev/null || true' EXIT
+          curl -fsS --retry 10 --retry-connrefused http://127.0.0.1:8080/healthz
+          curl -fsS --retry 10 --retry-connrefused http://127.0.0.1:8081/healthz
+          for test in baselines planning git_delivery testing deployments capacity; do
+            python3 "tests/${test}_http.py" http://127.0.0.1:8080 http://127.0.0.1:8081
+          done
+      - name: Print server logs on failure
+        if: failure()
+        run: tail -n 80 /tmp/delivery-{main,peer}.log
+
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DELIVERY_DB_PASSWORD: local-compose-only-password
+      DELIVERY_COOKIE_SECURE: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set the fixture signing key
+        run: |
+          echo "DELIVERY_CONNECTOR_MASTER_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - name: Start MySQL and Apache
+        run: |
+          docker compose up --build --wait
+          curl -fsS http://127.0.0.1:8080/healthz | grep -F '"ready":true'
+          curl -fsS http://127.0.0.1:8080/ | grep -F 'id="workspace"'
+          curl -fsS http://127.0.0.1:8080/workspace.js -o /tmp/delivery-workspace.js
+          node --check /tmp/delivery-workspace.js
+          printf '%s\n' 'Local-Only-Demo-517' | docker compose exec -T web php bin/delivery.php create-tenant smoke Smoke admin@example.test Admin
+          curl -fsS http://127.0.0.1:8080/api/session | grep -F '"csrf_token"'
+      - name: Print container logs
+        if: failure()
+        run: docker compose logs --no-color --tail 80 web migrate
+      - name: Stop the isolated stack
+        if: always()
+        run: docker compose down -v

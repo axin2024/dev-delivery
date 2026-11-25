@@ -2,9 +2,22 @@
 
 Dev Delivery 是基于 PHP 和 MySQL 的自托管研发交付平台。它串联需求基线与变更、任务排期、Git 提交与构建、测试复测、制品发布、生产回滚和业务签收。团队可以按里程碑查看逾期环节与交付周期，从冻结报告回查原始证据，并向外部验收人授权指定交付包。
 
-## 运行
+## 快速开始
 
-准备 PHP 8.2 以上版本及 PDO MySQL、mbstring、XMLReader 扩展。在 MySQL 8.4 中创建空库，通过 [.env.example](.env.example) 中的变量配置 Web 和 CLI 进程。仅在回环地址 HTTP 演示时使用 `DELIVERY_COOKIE_SECURE=0`。
+使用 Docker Compose，从空库开始运行工作台。先复制配置模板，设置独立的数据库密码和 64 位小写十六进制连接器主密钥。本机 HTTP 演示使用 `DELIVERY_COOKIE_SECURE=0`。
+
+```sh
+cp .env.example .env
+# 编辑 .env，填写密码、主密钥和本机演示的 Cookie 设置
+docker compose up --build --wait
+docker compose exec web php bin/delivery.php create-tenant harbor "港湾交付团队" admin@example.test "工作台管理员"
+```
+
+打开 `http://127.0.0.1:8080/`。使用租户代码 `harbor` 和新建管理员登录。创建产品负责人和业务签收人后即可登记项目和冻结范围。可以按[调度报表交付案例](examples/dispatch/README.md)生成一份有构建、复测、生产确认和签收记录的报告。
+
+### 直接运行 PHP
+
+准备 PHP 8.2 以上版本及 PDO MySQL、mbstring、XMLReader 扩展。在 MySQL 8.4 中创建空库，将 [.env.example](.env.example) 中的值导出到 Web 和 CLI 进程的环境。PHP 进程通过环境读取配置。内置服务器用于回环地址演示。
 
 ```sh
 php bin/delivery.php migrate
@@ -32,5 +45,8 @@ php -S 127.0.0.1:8080 -t public public/index.php
 - [环境晋级、查单与回滚](docs/environment-deployments.md)
 - [业务签收、具名豁免和交付报告](docs/business-signoff.md)
 - [里程碑、移交与外部交付包](docs/project-operations.md)
+- [自托管配置、升级与恢复](docs/self-hosting.md)
+- [验收结果和复跑命令](docs/release-validation.md)
+- [贡献指南](CONTRIBUTING.md) · [安全问题反馈](SECURITY.md) · [第三方声明](THIRD_PARTY_NOTICES.md)
 
 许可见 [Apache License 2.0](LICENSE)。

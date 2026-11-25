@@ -1,0 +1,51 @@
+x-delivery-environment: &delivery-environment
+  DELIVERY_DSN: "mysql:host=db;port=3306;dbname=${DELIVERY_DB_NAME:-dev_delivery};charset=utf8mb4"
+  DELIVERY_DB_USER: "${DELIVERY_DB_USER:-dev_delivery}"
+  DELIVERY_DB_PASSWORD: "${DELIVERY_DB_PASSWORD:?set DELIVERY_DB_PASSWORD}"
+  DELIVERY_COOKIE_SECURE: "${DELIVERY_COOKIE_SECURE:-1}"
+  DELIVERY_CONNECTOR_MASTER_KEY: "${DELIVERY_CONNECTOR_MASTER_KEY:?set DELIVERY_CONNECTOR_MASTER_KEY}"
+
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: "${DELIVERY_DB_NAME:-dev_delivery}"
+      MYSQL_USER: "${DELIVERY_DB_USER:-dev_delivery}"
+      MYSQL_PASSWORD: "${DELIVERY_DB_PASSWORD:?set DELIVERY_DB_PASSWORD}"
+      MYSQL_RANDOM_ROOT_PASSWORD: "1"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", 'MYSQL_PWD="$$MYSQL_PASSWORD" mysql --protocol=tcp -h 127.0.0.1 -u "$$MYSQL_USER" "$$MYSQL_DATABASE" -e "SELECT 1"']
+      interval: 5s
+      timeout: 4s
+      retries: 24
+    restart: unless-stopped
+
+  migrate:
+    build: .
+    image: dev-delivery:local
+    environment: *delivery-environment
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["php", "bin/delivery.php", "migrate"]
+
+  web:
+    image: dev-delivery:local
+    pull_policy: never
+    environment: *delivery-environment
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${DELIVERY_HTTP_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit((json_decode(@file_get_contents('http://127.0.0.1/healthz') ?: '{}', true)['ready'] ?? false) ? 0 : 1);"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  mysql-data:

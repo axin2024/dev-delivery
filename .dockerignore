@@ -1,0 +1,14 @@
+**
+!Dockerfile
+!bin/
+!bin/**
+!database/
+!database/**
+!deploy/
+!deploy/**
+!public/
+!public/**
+!resources/
+!resources/**
+!src/
+!src/**

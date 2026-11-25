@@ -109,6 +109,87 @@
             <div id="baseline-detail"></div>
           </section>
           <section class="panel">
+            <h2>变更评审</h2>
+            <details id="change-editor" hidden>
+              <summary>发起变更</summary>
+              <form id="propose-change">
+                <p id="proposal-baseline">请先打开要修订的基线。</p>
+                <div id="proposal-criteria"></div>
+                <label id="proposal-reason" hidden>变更理由<textarea name="reason" required></textarea></label>
+                <button id="add-proposal-criterion" type="button" hidden>添加修订项</button>
+                <button id="submit-change" disabled>提交评审</button>
+              </form>
+            </details>
+            <div id="changes" class="item-list"></div>
+            <div id="change-detail"></div>
+            <form id="review-change" hidden>
+              <label>评审结果<select name="decision">
+                <option value="approved">批准</option><option value="rejected">驳回</option>
+              </select></label>
+              <label>评审意见<textarea name="note" required></textarea></label>
+              <button>确认评审</button>
+            </form>
+          </section>
+          <section class="panel">
+            <h2>迭代与团队依赖</h2>
+            <div id="sprints" class="item-list"></div>
+            <div id="sprint-detail"></div>
+            <details id="sprint-editor" hidden>
+              <summary>创建迭代</summary>
+              <form id="create-sprint">
+                <label>团队编码<input name="team" required></label>
+                <label>迭代编码<input name="code" required></label>
+                <label>迭代名称<input name="title" required></label>
+                <label>开始日期<input name="starts_on" type="date" required></label>
+                <label>结束日期<input name="ends_on" type="date" required></label>
+                <label>容量（点）<input name="capacity" type="number" min="1" required></label>
+                <button>创建迭代</button>
+              </form>
+            </details>
+            <h3>任务</h3>
+            <div id="work-items" class="item-list"></div>
+            <details id="work-editor" hidden>
+              <summary>创建任务</summary>
+              <form id="create-work">
+                <label>验收标准<select name="criterion_id" required></select></label>
+                <label>任务编码<input name="code" required></label>
+                <label>任务名称<input name="title" required></label>
+                <label>团队编码<input name="team" required></label>
+                <label>责任人账号 ID<input name="owner_id" type="number" min="1" required></label>
+                <label>工作量（点）<input name="effort" type="number" min="1" required></label>
+                <button>创建任务</button>
+              </form>
+            </details>
+            <div id="work-detail"></div>
+            <div id="work-actions" hidden>
+              <form id="schedule-work">
+                <label>迭代 ID（留空取消排期）<input name="sprint_id" type="number" min="1"></label>
+                <button>保存排期</button>
+              </form>
+              <form id="save-dependency">
+                <label>前置任务 ID<input name="predecessor_id" type="number" min="1" required></label>
+                <label>依赖责任人账号 ID<input name="owner_id" type="number" min="1" required></label>
+                <label>依赖截止日期<input name="due_on" type="date" required></label>
+                <button>保存依赖</button>
+              </form>
+            </div>
+          </section>
+          <section class="panel">
+            <h2>关联测试用例</h2>
+            <div id="test-cases" class="item-list"></div>
+            <details id="case-editor" hidden>
+              <summary>登记验收用例</summary>
+              <form id="create-case">
+                <label>验收标准<select name="criterion_id" required></select></label>
+                <label>用例编码<input name="code" required></label>
+                <label>用例名称<input name="title" required></label>
+                <label>执行步骤<textarea name="steps" required></textarea></label>
+                <label>预期结果<textarea name="expected_result" required></textarea></label>
+                <button>登记用例</button>
+              </form>
+            </details>
+          </section>
+          <section class="panel">
             <h2>项目时间线</h2>
             <ol id="timeline"></ol>
             <button id="more-events" type="button" hidden>更多事件</button>

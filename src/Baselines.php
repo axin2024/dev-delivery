@@ -107,6 +107,22 @@ final readonly class Baselines
         return $criterion + ['revisions' => array_slice($rows, 0, 50), 'next_after' => count($rows) > 50 ? $rows[49]['version'] : null];
     }
 
+    public function appendReviewedRevision(Actor $actor, int $project, array $proposal): array
+    {
+        $criterion = $proposal['criterion_id'];
+        $current = $this->store->one('SELECT id, version, digest FROM criterion_revisions
+            WHERE tenant_id=? AND project_id=? AND criterion_id=? ORDER BY version DESC LIMIT 1',
+            [$actor->tenantId, $project, $criterion]);
+        if ($current['id'] !== $proposal['prior_revision_id']) {
+            throw new Problem(409, 'change_revision_stale', ['revision_id' => $current['id']]);
+        }
+        [$title, $statement] = $this->criterionFields($proposal);
+        if ($current['digest'] === $this->digest([$title, $statement])) {
+            throw new Problem(422, 'criterion_revision_unchanged');
+        }
+        return $this->append($actor, $project, $criterion, $current['version'] + 1, $title, $statement, $current['id']);
+    }
+
     public function scope(Actor $actor, int $project): array
     {
         return $this->store->transaction(function () use ($actor, $project): array {

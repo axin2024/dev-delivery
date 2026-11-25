@@ -53,7 +53,10 @@ final class Http
                 };
             } else {
                 $projects = new Projects($store, $accounts, $audit);
-                [$status, $result] = $this->dispatch($method, $path, $actor, $projects, new Baselines($store, $projects, $audit), $input);
+                $baselines = new Baselines($store, $projects, $audit);
+                $changes = new Changes($store, $projects, $baselines, $audit);
+                $planning = new Planning($store, $projects, $audit);
+                [$status, $result] = $this->dispatch($method, $path, $actor, $projects, $baselines, $changes, $planning, $input);
             }
             $this->respond($status, $result);
         } catch (Problem $error) {
@@ -64,7 +67,10 @@ final class Http
         }
     }
 
-    private function dispatch(string $method, string $path, Actor $actor, Projects $projects, Baselines $baselines, array $body): array
+    private function dispatch(
+        string $method, string $path, Actor $actor, Projects $projects, Baselines $baselines,
+        Changes $changes, Planning $planning, array $body,
+    ): array
     {
         if ($path === '/api/projects') {
             return match ($method) {
@@ -78,7 +84,7 @@ final class Http
         }
         $project = (int) $parts[1];
         $relative = $parts[2] ?? '';
-        if (preg_match('~\A/(members|requirements|criteria|baselines)/([1-9][0-9]{0,17})(/criteria)?\z~', $relative, $item)) {
+        if (preg_match('~\A/(members|requirements|criteria|baselines|changes|sprints|work-items)/([1-9][0-9]{0,17})(/criteria|/decision|/schedule|/timeline)?\z~', $relative, $item)) {
             $id = (int) $item[2];
             return match ($method . ' ' . $item[1] . ($item[3] ?? '')) {
                 'PUT members' => [200, $projects->setMember($actor, $project, $id, $body)],
@@ -86,7 +92,20 @@ final class Http
                 'GET criteria' => [200, $baselines->history($actor, $project, $id, $this->cursor())],
                 'PUT criteria' => [201, $baselines->reviseCriterion($actor, $project, $id, $body)],
                 'GET baselines' => [200, $baselines->view($actor, $project, $id)],
+                'GET changes' => [200, $changes->view($actor, $project, $id)],
+                'GET changes/timeline' => [200, $changes->timeline($actor, $project, $id, $this->cursor())],
+                'POST changes/decision' => [200, $changes->decide($actor, $project, $id, $body)],
+                'GET sprints' => [200, $planning->sprintView($actor, $project, $id, $this->cursor())],
+                'GET work-items' => [200, $planning->workView($actor, $project, $id)],
+                'GET work-items/timeline' => [200, $planning->workTimeline($actor, $project, $id, $this->cursor())],
+                'PUT work-items/schedule' => [200, $planning->schedule($actor, $project, $id, $body)],
                 default => throw new Problem(404, 'route_not_found'),
+            };
+        }
+        if (preg_match('~\A/work-items/([1-9][0-9]{0,17})/dependencies/([1-9][0-9]{0,17})\z~', $relative, $item)) {
+            return match ($method) {
+                'PUT', 'DELETE' => [200, $planning->setDependency($actor, $project, (int) $item[1], (int) $item[2], $method === 'PUT' ? $body : null)],
+                default => throw new Problem(405, 'method_not_allowed'),
             };
         }
         return match ($method . ' ' . $relative) {
@@ -98,6 +117,14 @@ final class Http
             'GET /scope' => [200, $baselines->scope($actor, $project)],
             'GET /baselines' => [200, $baselines->listing($actor, $project, $this->cursor())],
             'POST /baselines' => [201, $baselines->freeze($actor, $project, $body)],
+            'GET /changes' => [200, $changes->listing($actor, $project, $this->cursor())],
+            'POST /changes' => [201, $changes->create($actor, $project, $body)],
+            'GET /sprints' => [200, $planning->listing($actor, $project, $this->cursor(), 'sprints')],
+            'POST /sprints' => [201, $planning->createSprint($actor, $project, $body)],
+            'GET /work-items' => [200, $planning->listing($actor, $project, $this->cursor(), 'work_items')],
+            'POST /work-items' => [201, $planning->createWork($actor, $project, $body)],
+            'GET /test-cases' => [200, $planning->listing($actor, $project, $this->cursor(), 'test_cases')],
+            'POST /test-cases' => [201, $planning->createCase($actor, $project, $body)],
             default => throw new Problem(404, 'route_not_found'),
         };
     }

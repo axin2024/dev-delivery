@@ -108,18 +108,24 @@ final readonly class Projects
         return $project;
     }
 
+    public function lockForReview(Actor $actor, int $id): array
+    {
+        $project = $this->project($actor, $id, true);
+        if ($project['business_signer_id'] !== $actor->accountId) {
+            throw new Problem(403, 'project_business_signer_required');
+        }
+        return $project;
+    }
+
+    public function assertParticipant(Actor $actor, int $project, int $account): void
+    {
+        $this->view($this->accounts->find($actor->tenantId, $account), $project);
+    }
+
     public function timeline(Actor $actor, int $id, int $after): array
     {
         $this->view($actor, $id);
-        $rows = $this->store->all("SELECT id, actor_id, action, details, occurred_at FROM audit_events
-            WHERE tenant_id=? AND object_type='project' AND object_id=? AND id>? ORDER BY id LIMIT 51",
-            [$actor->tenantId, $id, $after]);
-        $items = array_slice($rows, 0, 50);
-        foreach ($items as &$event) {
-            $event['details'] = json_decode($event['details'], false, 32, JSON_THROW_ON_ERROR);
-        }
-        unset($event);
-        return ['items' => $items, 'next_after' => count($rows) > 50 ? $rows[49]['id'] : null];
+        return $this->audit->timeline($actor, 'project', $id, $after);
     }
 
     private function project(Actor $actor, int $id, bool $lock): array

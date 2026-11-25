@@ -72,6 +72,16 @@ final class Input
         return $value;
     }
 
+    public static function date(array $data, string $field): string
+    {
+        $value = self::string($data, $field, 10, 10);
+        if (!preg_match('/\A([1-9][0-9]{3})-([0-9]{2})-([0-9]{2})\z/', $value, $parts)
+            || !checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])) {
+            throw self::invalid($field);
+        }
+        return $value;
+    }
+
     public static function password(array $data, bool $new = false): string
     {
         $value = $data['password'] ?? null;

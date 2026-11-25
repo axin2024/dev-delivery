@@ -188,8 +188,22 @@ def run(origin, peer, after_review=None):
         defect_url = f"{base}/defects/{defect['id']}"
         engineer.call(defect_url + "/fix", "POST", dict(artifact_id=artifact2["id"], note="Header updated"))
         tester.call(defect_url + "/close", "POST", dict(retest_result_id=retest["id"], note="Retest approved"))
+        reviewer, reviewer_id = member(admin, origin, tenant, password, "external_reviewer")
+        other_tenant_reviewer, _ = member(outside, peer, "outside-" + token, password, "external_reviewer")
+
+        def additional_account(email, name, role):
+            account = admin.call("/api/accounts", "POST", dict(email=email, name=name, password=password, roles=[role]), 201)
+            client = Session(peer)
+            client.login(tenant, email, password)
+            return client, account["account_id"]
+
+        other_reviewer, other_reviewer_id = additional_account("partner@example.test", "Partner", "external_reviewer")
+        next_engineer, next_engineer_id = additional_account("backup@example.test", "Engineer Backup", "engineer")
+        owner.call(f"{base}/members/{next_engineer_id}", "PUT", {"enabled": True})
         trace = dict(peer=second_signer, task_id=task["id"], engineer_id=engineer_id, defect_id=defect["id"],
-                     failed_id=fail["id"], retest_id=retest["id"], commit_sha=second_commit, requirement_id=req["id"])
+                     failed_id=fail["id"], retest_id=retest["id"], commit_sha=second_commit, requirement_id=req["id"],
+                     reviewer=reviewer, reviewer_id=reviewer_id, other_reviewer=other_reviewer, other_reviewer_id=other_reviewer_id,
+                     external_other_tenant=other_tenant_reviewer, engineer=engineer, next_engineer=next_engineer, next_engineer_id=next_engineer_id)
         after_review(base, baseline, [p1, p2], development, staging, release, release_peer, owner, business, tester, outside,
                      event, first_commit, fork[0], trace)
     criterion = baseline["criteria"][0]

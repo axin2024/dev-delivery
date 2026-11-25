@@ -18,7 +18,9 @@ const eventTitles = {
   candidate_approval_revoked: '撤销候选批准', candidate_superseded: '后继候选取代当前版本', candidate_deployed: '候选已上线',
   deployment_connector_created: '登记部署连接器', deployment_queued: '登记部署请求', deployment_unknown: '部署结果待核实',
   deployment_running: '部署工具开始执行', deployment_succeeded: '确认部署成功', deployment_failed: '确认部署失败', deployment_cancelled: '确认取消部署',
-  signoff_accepted: '业务签收通过', signoff_blocked: '业务签收阻断', signoff_waived: '业务签署豁免', delivery_report_archived: '归档交付报告'
+  signoff_accepted: '业务签收通过', signoff_blocked: '业务签收阻断', signoff_waived: '业务签署豁免', delivery_report_archived: '归档交付报告',
+  milestone_created: '登记里程碑', milestone_replanned: '变更里程碑计划', milestone_metrics_captured: '保存周期快照',
+  ownership_transferred: '移交责任人', review_package_created: '生成外部交付包', review_grant_saved: '授权交付包', review_grant_revoked: '撤回交付包授权'
 };
 const errors = {
   invalid_credentials: '租户、邮箱或密码有误。',
@@ -85,6 +87,17 @@ const errors = {
   signoff_deployment_no_longer_current: '此部署已从生产环境下线，保留历史记录供查看。',
   signoff_evidence_mismatch: '发布证据不完整，请核对审批、制品及环境记录。',
   delivery_report_too_large: '追溯矩阵超过交付报告的大小上限。',
+  ownership_changed: '责任人已更新，请重新打开详情。',
+  ownership_unchanged: '请选择新的责任人。',
+  milestone_changed: '此里程碑已经更新，请核对最新计划。',
+  milestone_release_started: '此里程碑的生产部署已开始，交付目标已锁定。',
+  milestone_already_signed_off: '此里程碑已签收，计划日期已锁定。',
+  milestone_production_environment_required: '请选择该项目的生产环境。',
+  milestone_candidate_target_mismatch: '请核对候选所属基线和生产环境。',
+  external_reviewer_cannot_join_project: '请通过外部交付包向该验收人授权。',
+  external_reviewer_required: '请选择外部验收人账号。',
+  review_grant_date_in_past: '过期日必须为今天或之后的 UTC 日期。',
+  review_package_not_found: '找不到已授权的交付包。',
   csrf_invalid: '会话已过期，请刷新页面后登录。'
 };
 let busy = false;
@@ -367,15 +380,19 @@ function addProposalCriterion() {
   wrapper.append(fieldset);
 }
 
-async function readPage(path, target, render, after = 0) {
-  const data = await call(projectPath(path) + '?after=' + after);
+function readPage(path, target, render, after = 0) {
+  return readPagedCollection(projectPath(path), target, render, after);
+}
+
+async function readPagedCollection(path, target, render, after = 0) {
+  const data = await call(path + '?after=' + after);
   const area = $(target);
   if (!after) area.replaceChildren();
   for (const item of data.items) area.append(render(item));
   if (!after && !data.items.length) area.append(textNode('p', '暂无记录。'));
   if (data.next_after !== null) {
     const more = actionButton('加载更多', async () => {
-      await readPage(path, target, render, data.next_after);
+      await readPagedCollection(path, target, render, data.next_after);
       more.remove();
     });
     area.append(more);
@@ -522,7 +539,10 @@ async function viewWork(id) {
     }
     dependencies.append(row);
   }
-  target.append(dependencies, timelineControl('/work-items/' + id + '/timeline'));
+  target.append(dependencies, timelineControl('/work-items/' + id + '/timeline'),
+    actionButton('查看任务移交记录', () => readOwnership('/work-items/' + id, 'work-ownership')));
+  $('work-ownership').replaceChildren();
+  $('transfer-work-owner').reset();
   $('work-actions').hidden = !canPlan();
   $('schedule-work').elements.sprint_id.value = work.sprint_id ?? '';
   $('save-dependency').reset();
@@ -628,6 +648,7 @@ function resetDeliveryViews() {
   resetRelease();
   resetDeployments();
   resetSignoffs();
+  resetOperations();
 }
 
 function criterionInput(fields) {
@@ -648,7 +669,7 @@ async function viewProject(id) {
   for (const id of ['planning', 'change-editor', 'sprint-editor', 'work-editor', 'repository-editor']) $(id).hidden = !editable;
   await Promise.all([
     ...(editable ? [readScope()] : []), readBaselines(), readTimeline(),
-    readChanges(), readSprints(), readWork(), readRepositories(), readTesting(), readCandidates(), readDeployments(), readSignoffs()
+    readChanges(), readSprints(), readWork(), readRepositories(), readTesting(), readCandidates(), readDeployments(), readSignoffs(), readOperations()
   ]);
   $('project-detail').hidden = false;
 }
@@ -664,7 +685,9 @@ async function showSession() {
     $(id).reset();
   }
   resetDeliveryViews();
-  $('workspace').hidden = !state.actor;
+  const external = state.actor?.roles.includes('external_reviewer');
+  $('workspace').hidden = !state.actor || external;
+  $('external-workspace').hidden = !external;
   $('authentication').hidden = Boolean(state.actor);
   $('logout').hidden = !state.actor;
   $('identity').textContent = state.actor?.name || '';
@@ -672,6 +695,10 @@ async function showSession() {
   state.project = null;
   state.scope = null;
   if (!state.actor) return;
+  if (external) {
+    await readExternalPackages();
+    return;
+  }
   const admin = state.actor.roles.includes('admin');
   $('accounts').hidden = !admin;
   $('new-project').hidden = !admin && !state.actor.roles.includes('product');

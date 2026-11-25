@@ -10,6 +10,7 @@
   <script src="/release.js" defer></script>
   <script src="/deployments.js" defer></script>
   <script src="/signoffs.js" defer></script>
+  <script src="/operations.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -28,6 +29,11 @@
         <button>登录</button>
       </form>
     </section>
+    <section id="external-workspace" class="panel" hidden>
+      <h1>外部验收交付包</h1>
+      <div id="external-packages" class="item-list"></div>
+      <div id="external-package-detail"></div>
+    </section>
     <div id="workspace" hidden>
       <aside>
         <h2>项目</h2>
@@ -45,6 +51,7 @@
               <option value="tester">测试人员</option>
               <option value="release_manager">发布经理</option>
               <option value="business">业务签收人</option>
+              <option value="external_reviewer">外部验收人</option>
             </select></label>
             <button>创建</button>
           </form>
@@ -176,6 +183,14 @@
                 <label>依赖截止日期<input name="due_on" type="date" required></label>
                 <button>保存依赖</button>
               </form>
+              <details>
+                <summary>移交任务责任</summary>
+                <form id="transfer-work-owner">
+                  <label>新责任人账号 ID<input name="next_owner_id" type="number" min="1" required></label>
+                  <label>移交原因<textarea name="reason" maxlength="2000" required></textarea></label>
+                  <button>移交任务</button>
+                </form>
+              </details>
             </div>
             <form id="link-git" hidden>
               <label>仓库 ID<input name="repository_id" type="number" min="1" required></label>
@@ -183,6 +198,7 @@
               <button>关联提交</button>
             </form>
             <div id="git-links" class="item-list"></div>
+            <div id="work-ownership" class="item-list"></div>
           </section>
           <section class="panel">
             <h2>代码仓库与构建</h2>
@@ -445,6 +461,67 @@
             </form>
             <div id="signoff-history"></div>
             <div id="signoff-report"></div>
+          </section>
+          <section class="panel">
+            <h2>里程碑和周期</h2>
+            <details id="milestone-editor" hidden>
+              <summary>登记项目里程碑</summary>
+              <form id="create-milestone">
+                <label>里程碑编码<input name="code" maxlength="64" required></label>
+                <label>名称<input name="title" maxlength="160" required></label>
+                <label>基线 ID<input name="baseline_id" type="number" min="1" required></label>
+                <label>候选 ID（可稍后关联）<input name="candidate_id" type="number" min="1"></label>
+                <label>生产环境 ID<input name="environment_id" type="number" min="1" required></label>
+                <label>责任人账号 ID<input name="owner_id" type="number" min="1" required></label>
+                <label>计划交付日期（UTC）<input name="due_on" type="date" required></label>
+                <button>保存里程碑</button>
+              </form>
+            </details>
+            <div id="milestones" class="item-list"></div>
+            <div id="milestone-detail"></div>
+            <details id="milestone-replan" hidden>
+              <summary>调整里程碑计划</summary>
+              <form id="plan-milestone">
+                <label>基线 ID<input name="baseline_id" type="number" min="1" required></label>
+                <label>候选 ID<input name="candidate_id" type="number" min="1"></label>
+                <label>计划交付日期（UTC）<input name="due_on" type="date" required></label>
+                <button>保存计划变更</button>
+              </form>
+            </details>
+            <details id="milestone-ownership-editor" hidden>
+              <summary>移交里程碑责任</summary>
+              <form id="transfer-milestone-owner">
+                <label>新责任人账号 ID<input name="next_owner_id" type="number" min="1" required></label>
+                <label>移交原因<textarea name="reason" maxlength="2000" required></textarea></label>
+                <button>移交里程碑</button>
+              </form>
+            </details>
+            <div id="milestone-ownership" class="item-list"></div>
+            <div id="milestone-metrics"></div>
+          </section>
+          <section id="review-package-panel" class="panel">
+            <h2>外部交付包管理</h2>
+            <details id="package-editor" hidden>
+              <summary>生成外部交付包</summary>
+              <form id="create-package">
+                <label>已归档的生产部署 ID<input name="deployment_id" type="number" min="1" required></label>
+                <button type="button" id="load-package-criteria">载入归档标准</button>
+                <fieldset id="package-criteria" hidden>
+                  <legend>授权查看的验收标准</legend>
+                  <div id="package-criterion-options"></div>
+                </fieldset>
+                <label>对外包名称<input name="title" maxlength="160" required></label>
+                <button id="save-review-package" disabled>保存外部交付包</button>
+              </form>
+            </details>
+            <div id="review-packages" class="item-list"></div>
+            <div id="review-package-detail"></div>
+            <form id="grant-review-package" hidden>
+              <label>外部验收人账号 ID<input name="reviewer_id" type="number" min="1" required></label>
+              <label>过期日（UTC）<input name="expires_on" type="date" required></label>
+              <button>授予交付包访问权</button>
+            </form>
+            <div id="review-grants" class="item-list"></div>
           </section>
           <section class="panel">
             <h2>项目时间线</h2>

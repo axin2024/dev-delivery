@@ -13,6 +13,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from project_operations_http import start_milestone, check_waiting, verify_operations
 from release_candidates_http import content, run
 from signoffs_http import verify_signoff
 from testing_http import upload
@@ -46,6 +47,7 @@ def exercise(base, baseline, plans, dev, staging, release, peer, owner, business
     assert dev_connector["signing_secret"] != connector["signing_secret"]
     assert tester.call(prod_connector, "POST", status=403)["error"] == "project_release_manager_required"
     current = {env["id"]: None for env in [dev, staging, prod]}
+    milestone = start_milestone(base, baseline, prod, owner, business, outside, trace)
 
     def candidate(plan, n):
         item = release.call(base + "/candidates", "POST", dict(code=f"prod-{n}", title=f"Ship {n}", baseline_id=baseline["id"],
@@ -90,6 +92,10 @@ def exercise(base, baseline, plans, dev, staging, release, peer, owner, business
         root = Path(directory)
         for number, plan in enumerate(plans, start=1):
             selected, address, proof = candidate(plan, number)
+            if number == 2:
+                milestone = owner.call(f"{base}/milestones/{milestone['id']}", "PUT", dict(
+                    version=milestone["version"], candidate_id=selected["id"], due_on=milestone["due_on"]))
+                assert milestone["phase"] == "testing" and milestone["quality"]["counts"]["passed"] == 2
             wrong = request_data(dev, selected)
             assert release.call(endpoint, "POST", dict(wrong, artifact_sha256="f" * 64), 409)["error"] == "deployment_artifact_mismatch"
             assert release.call(endpoint, "POST", request_data(staging, selected), 422)["error"] == "deployment_promotion_source_invalid"
@@ -158,15 +164,17 @@ def exercise(base, baseline, plans, dev, staging, release, peer, owner, business
             assert release.call(address)["state"] == "deployed"
             current[prod["id"]] = operation["id"]
             if number == 1:
-                prod1 = operation
+                prod1 = release.call(queue_url)
                 hotfix = check_parallel_reviews(base, baseline, plans[1], prod, prod1, selected, first_commit, hotfix_commit,
                                                 git_event, release, owner, tester)
             else:
-                prod2 = operation
+                prod2 = release.call(queue_url)
                 changed = release.call(f"{base}/candidates/{hotfix['id']}")
                 assert not changed["approval_valid"] and not changed["quality"]["production_base_current"]
 
+        check_waiting(base, milestone, prod2, owner, business)
         archived = verify_signoff(base, baseline, plans[1], prod1, prod2, owner, business, tester, outside, trace)
+        verify_operations(base, baseline, milestone, prod2, owner, business, trace)
         request = dict(environment_id=prod["id"], expected_head_id=prod2["id"], request_key="rollback/old-export",
                        reason="Restore the earlier approved export", artifact_sha256=prod1["artifact_sha256"])
         rollback_path = f"{endpoint}/{prod2['id']}/rollback"

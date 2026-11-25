@@ -66,7 +66,10 @@ final class Http
                 $this->respond(200, ['csrf_token' => $_SESSION['csrf'], 'actor' => null]);
                 return;
             }
-            if ($path === '/api/accounts') {
+            if ($actor->has(Actor::EXTERNAL_REVIEWER)) {
+                [$status, $result, $filename] = (new OperationsHttp($store, $projects, $accounts, $audit))->external(
+                    $method, $actor, $path, $this->cursor());
+            } elseif ($path === '/api/accounts') {
                 [$status, $result] = match ($method) {
                     'GET' => [200, $accounts->listing($actor, $this->cursor())],
                     'POST' => [201, $accounts->create($actor, $input)->view()],
@@ -75,6 +78,9 @@ final class Http
             } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/signoffs(/.*)?\z~', $path, $signoff)) {
                 [$status, $result, $filename] = array_pad((new SignoffHttp(new BusinessSignoff($store, $projects, $audit)))->dispatch(
                     $method, $actor, (int) $signoff[1], $signoff[2] ?? '', $input, $this->cursor()), 3, null);
+            } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/((?:milestones|review-packages)(?:/.*)?|work-items/[1-9][0-9]{0,17}/ownership)\z~', $path, $operations)) {
+                [$status, $result] = (new OperationsHttp($store, $projects, $accounts, $audit))->dispatch(
+                    $method, $actor, (int) $operations[1], $operations[2], $input, $this->cursor());
             } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/(deployments(?:/.*)?|environments/[1-9][0-9]{0,17}/deployment-connector)\z~', $path, $deployment)) {
                 [$status, $result] = (new DeploymentHttp($store, $projects, $audit))->dispatch(
                     $method, $actor, (int) $deployment[1], $deployment[2], $input, $this->cursor(), $_GET);

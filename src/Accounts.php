@@ -7,7 +7,7 @@ use PDOException;
 
 final readonly class Accounts
 {
-    private const ROLES = ['product', 'engineer', 'tester', 'release_manager', 'business'];
+    private const ROLES = ['product', 'engineer', 'tester', 'release_manager', 'business', Actor::EXTERNAL_REVIEWER];
     private const UNKNOWN_ACCOUNT_HASH = '$2y$12$DBBBwt/HNztgZ6XoqT16GuUwx1A8Kg8cTRcCmuRBoVOuGYaN1HPxS';
 
     public function __construct(private Store $store, private Audit $audit)
@@ -45,6 +45,9 @@ final readonly class Accounts
             Input::choice(['role' => $role], 'role', self::ROLES);
         }
         $roles = array_values(array_unique($roles));
+        if (count($roles) > 1 && in_array(Actor::EXTERNAL_REVIEWER, $roles, true)) {
+            throw new Problem(422, 'external_reviewer_must_be_exclusive');
+        }
         [$email, $name, $passwordHash] = $this->accountFields($input);
         try {
             return $this->store->transaction(function () use ($actor, $email, $name, $passwordHash, $roles): Actor {

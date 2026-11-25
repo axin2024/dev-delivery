@@ -43,6 +43,7 @@ async function viewSignoff(id) {
   actions.className = 'item-list';
   actions.append(actionButton('查看生产部署', () => viewDeployment(id)), actionButton('查看追溯矩阵', () => viewSignoffReport(id)),
     timelineControl('/signoffs/' + id + '/timeline'));
+  if (row.report && canPlan()) actions.append(actionButton('用此报告生成外部交付包', () => prepareReviewPackage(row)));
   detail.append(actions);
   const requirements = new Map(row.criteria.map(item => [item.requirement.id, item.requirement]));
   const select = $('signoff-filter');
@@ -113,7 +114,7 @@ async function viewSignoffReport(id) {
   if (signoff.current?.deployment_id === id && signoff.current.can_decide && !signoff.current.blocking_criterion_ids.length && !preview.archived) {
     target.append(textNode('p', '归档后可下载已冻结的证据。'), actionButton('归档交付报告', async () => {
       await call(projectPath('/signoffs/') + id + '/report', 'POST', {digest: preview.digest});
-      await Promise.all([viewSignoff(id), readSignoffs(), readCandidates(), readTimeline()]);
+      await Promise.all([viewSignoff(id), readSignoffs(), readCandidates(), readTimeline(), readMilestones()]);
     }));
   }
   for (const row of matrix.criteria) {

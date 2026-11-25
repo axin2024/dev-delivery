@@ -5,6 +5,8 @@ namespace DevDelivery;
 
 final readonly class Actor
 {
+    public const EXTERNAL_REVIEWER = 'external_reviewer';
+
     public function __construct(
         public int $tenantId,
         public int $accountId,

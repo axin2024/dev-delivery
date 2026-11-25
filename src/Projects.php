@@ -82,7 +82,9 @@ final readonly class Projects
         $enabled = Input::boolean($input, 'enabled');
         return $this->store->transaction(function () use ($actor, $id, $member, $enabled): array {
             $project = $this->lockForPlanning($actor, $id);
-            $this->accounts->find($actor->tenantId, $member);
+            if ($this->accounts->find($actor->tenantId, $member)->has(Actor::EXTERNAL_REVIEWER)) {
+                throw new Problem(422, 'external_reviewer_cannot_join_project');
+            }
             if ($member === $project['product_owner_id'] || $member === $project['business_signer_id']) {
                 throw new Problem(422, 'member_has_charter_role');
             }
@@ -165,6 +167,9 @@ final readonly class Projects
 
     private function project(Actor $actor, int $id, bool $lock): array
     {
+        if ($actor->has(Actor::EXTERNAL_REVIEWER)) {
+            throw new Problem(404, 'project_not_found');
+        }
         $row = $this->store->one('SELECT id, code, title, charter, product_owner_id, business_signer_id, version
             FROM projects WHERE tenant_id=? AND id=?' . ($lock ? ' FOR UPDATE' : ''), [$actor->tenantId, $id]);
         if (!$row) {

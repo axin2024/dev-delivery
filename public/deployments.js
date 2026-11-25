@@ -88,7 +88,7 @@ function readDeploymentReceipts(id) {
 }
 
 async function refreshDeployment(id) {
-  await Promise.all([viewDeployment(id), readDeployments(), readEnvironments(), readTimeline(), readCandidates(), readSignoffs()]);
+  await Promise.all([viewDeployment(id), readDeployments(), readEnvironments(), readTimeline(), readCandidates(), readSignoffs(), readMilestones()]);
 }
 
 form('request-deployment', async fields => {

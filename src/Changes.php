@@ -149,6 +149,18 @@ final readonly class Changes
                 $impact[$row['criterion_id']][$table][] = $row;
             }
         }
+        $signoffs = $this->store->all('SELECT s.id, s.criterion_id, s.deployment_id, r.code, r.title, s.decision
+            FROM change_criteria c JOIN business_signoff_decisions s
+                ON (s.tenant_id,s.project_id,s.criterion_id,s.revision_id)=(c.tenant_id,c.project_id,c.criterion_id,c.prior_revision_id)
+            JOIN deployments d ON (d.tenant_id,d.project_id,d.id)=(s.tenant_id,s.project_id,s.deployment_id)
+            JOIN release_candidates r ON (r.tenant_id,r.project_id,r.id)=(d.tenant_id,d.project_id,d.candidate_id)
+            WHERE c.tenant_id=? AND c.project_id=? AND c.change_id=? AND s.id=(
+                SELECT i.id FROM business_signoff_decisions i WHERE (i.tenant_id,i.project_id,i.deployment_id,i.criterion_id)=
+                    (s.tenant_id,s.project_id,s.deployment_id,s.criterion_id) ORDER BY i.id DESC LIMIT 1)
+            ORDER BY s.deployment_id, s.id', $identity);
+        foreach ($signoffs as $row) {
+            $impact[$row['criterion_id']]['signoff_items'][] = $row;
+        }
         foreach ($impact as &$item) {
             $item['missing_links'] = array_keys(array_filter(
                 array_intersect_key($item, array_flip(['work_items', 'test_cases', 'signoff_items'])),

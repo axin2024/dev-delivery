@@ -9,6 +9,7 @@
   <script src="/testing.js" defer></script>
   <script src="/release.js" defer></script>
   <script src="/deployments.js" defer></script>
+  <script src="/signoffs.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -418,6 +419,32 @@
             </details>
             <div id="deployment-receipts" class="item-list"></div>
             <div id="deployment-connector"></div>
+          </section>
+          <section class="panel">
+            <h2>业务签收和交付报告</h2>
+            <div id="signoffs" class="item-list"></div>
+            <div id="signoff-detail"></div>
+            <label id="signoff-filter-label" hidden>筛选需求
+              <select id="signoff-filter"></select>
+            </label>
+            <div id="signoff-criteria"></div>
+            <form id="signoff-decision" hidden>
+              <h3 id="signoff-decision-title"></h3>
+              <label>业务结论<select name="decision" required>
+                <option value="accepted">通过</option>
+                <option value="blocked">阻断</option>
+                <option value="waived">签署具名豁免</option>
+              </select></label>
+              <label>结论与依据<textarea name="note" maxlength="2000" required></textarea></label>
+              <fieldset id="signoff-waiver-fields" hidden disabled>
+                <legend>豁免补验</legend>
+                <label>补验负责人 ID<input name="responsible_id" type="number" min="1" required></label>
+                <label>补验截止日（UTC）<input name="retest_due_on" type="date" required></label>
+              </fieldset>
+              <button>保存业务结论</button>
+            </form>
+            <div id="signoff-history"></div>
+            <div id="signoff-report"></div>
           </section>
           <section class="panel">
             <h2>项目时间线</h2>

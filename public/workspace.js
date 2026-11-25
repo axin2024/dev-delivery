@@ -17,7 +17,8 @@ const eventTitles = {
   candidate_submitted: '提交候选审批', candidate_approved: '批准发布候选',
   candidate_approval_revoked: '撤销候选批准', candidate_superseded: '后继候选取代当前版本', candidate_deployed: '候选已上线',
   deployment_connector_created: '登记部署连接器', deployment_queued: '登记部署请求', deployment_unknown: '部署结果待核实',
-  deployment_running: '部署工具开始执行', deployment_succeeded: '确认部署成功', deployment_failed: '确认部署失败', deployment_cancelled: '确认取消部署'
+  deployment_running: '部署工具开始执行', deployment_succeeded: '确认部署成功', deployment_failed: '确认部署失败', deployment_cancelled: '确认取消部署',
+  signoff_accepted: '业务签收通过', signoff_blocked: '业务签收阻断', signoff_waived: '业务签署豁免', delivery_report_archived: '归档交付报告'
 };
 const errors = {
   invalid_credentials: '租户、邮箱或密码有误。',
@@ -75,6 +76,15 @@ const errors = {
   deployment_uses_test_plan: '此测试计划正用于执行中的生产部署，请先查单。',
   deployment_uses_criteria: '变更涉及执行中生产部署使用的标准，请先查单。',
   rollback_source_not_available: '找不到此部署可恢复的前一个生产版本。',
+  project_business_signer_required: '此操作由项目指定的业务签收人完成。',
+  signoff_decision_changed: '结论已更新，请重新打开此签收单。',
+  signoff_waiver_requires_block_and_due_date: '请先登记阻断，再填写有效的补验截止日。',
+  signoff_requires_resolution: '仍有待签收、阻断或豁免过期的标准。',
+  signoff_preview_changed: '交付证据已更新，请重新预览报告。',
+  signoff_report_archived: '交付报告已归档，请查看归档版本。',
+  signoff_deployment_no_longer_current: '此部署已从生产环境下线，保留历史记录供查看。',
+  signoff_evidence_mismatch: '发布证据不完整，请核对审批、制品及环境记录。',
+  delivery_report_too_large: '追溯矩阵超过交付报告的大小上限。',
   csrf_invalid: '会话已过期，请刷新页面后登录。'
 };
 let busy = false;
@@ -425,6 +435,9 @@ async function viewChange(id) {
       const linked = impact[field].map(record => record.code + ' ' + record.title).join('、');
       article.append(textNode('p', label + ' · ' + (linked || '缺少关联')));
     }
+    for (const record of impact.signoff_items) {
+      article.append(actionButton('查看部署 #' + record.deployment_id + ' 的签收', () => viewSignoff(record.deployment_id)));
+    }
     target.append(article);
   }
   target.append(timelineControl('/changes/' + id + '/timeline'));
@@ -614,6 +627,7 @@ function resetDeliveryViews() {
   resetTesting();
   resetRelease();
   resetDeployments();
+  resetSignoffs();
 }
 
 function criterionInput(fields) {
@@ -634,7 +648,7 @@ async function viewProject(id) {
   for (const id of ['planning', 'change-editor', 'sprint-editor', 'work-editor', 'repository-editor']) $(id).hidden = !editable;
   await Promise.all([
     ...(editable ? [readScope()] : []), readBaselines(), readTimeline(),
-    readChanges(), readSprints(), readWork(), readRepositories(), readTesting(), readCandidates(), readDeployments()
+    readChanges(), readSprints(), readWork(), readRepositories(), readTesting(), readCandidates(), readDeployments(), readSignoffs()
   ]);
   $('project-detail').hidden = false;
 }

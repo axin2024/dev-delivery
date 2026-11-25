@@ -52,6 +52,9 @@ async function viewDeployment(id) {
   if (controls && row.stage === 'production' && row.current_head_id === id) {
     detail.append(actionButton('使用当前生产版本发起热修', () => chooseHotfixBase(row.environment_id, row.id)));
   }
+  if (row.kind === 'promote' && row.stage === 'production' && row.status === 'succeeded') {
+    detail.append(actionButton('查看此部署的业务签收', () => viewSignoff(row.id)));
+  }
   detail.append(actionButton('查看工具回执', () => readDeploymentReceipts(id)), timelineControl('/deployments/' + id + '/timeline'));
   $('deployment-timeout').hidden = !controls || !['queued', 'running'].includes(row.status);
   $('deployment-import').hidden = !controls;
@@ -85,7 +88,7 @@ function readDeploymentReceipts(id) {
 }
 
 async function refreshDeployment(id) {
-  await Promise.all([viewDeployment(id), readDeployments(), readEnvironments(), readTimeline(), readCandidates()]);
+  await Promise.all([viewDeployment(id), readDeployments(), readEnvironments(), readTimeline(), readCandidates(), readSignoffs()]);
 }
 
 form('request-deployment', async fields => {

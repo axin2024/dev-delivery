@@ -72,6 +72,9 @@ final class Http
                     'POST' => [201, $accounts->create($actor, $input)->view()],
                     default => throw new Problem(405, 'method_not_allowed'),
                 };
+            } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/signoffs(/.*)?\z~', $path, $signoff)) {
+                [$status, $result, $filename] = array_pad((new SignoffHttp(new BusinessSignoff($store, $projects, $audit)))->dispatch(
+                    $method, $actor, (int) $signoff[1], $signoff[2] ?? '', $input, $this->cursor()), 3, null);
             } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/(deployments(?:/.*)?|environments/[1-9][0-9]{0,17}/deployment-connector)\z~', $path, $deployment)) {
                 [$status, $result] = (new DeploymentHttp($store, $projects, $audit))->dispatch(
                     $method, $actor, (int) $deployment[1], $deployment[2], $input, $this->cursor(), $_GET);
@@ -90,7 +93,7 @@ final class Http
                 $planning = new Planning($store, $projects, $audit);
                 [$status, $result] = $this->dispatch($method, $path, $actor, $projects, $baselines, $changes, $planning, $git, $gitEvents, $input);
             }
-            $this->respond($status, $result, $artifactContent ? 'artifact.bin' : 'junit.xml');
+            $this->respond($status, $result, $filename ?? ($artifactContent ? 'artifact.bin' : 'junit.xml'));
         } catch (Problem $error) {
             $this->respond($error->status, ['error' => $error->reason, 'details' => (object) $error->details]);
         } catch (Throwable $error) {

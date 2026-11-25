@@ -147,7 +147,14 @@ final readonly class Projects
 
     public function assertParticipant(Actor $actor, int $project, int $account): void
     {
-        $this->view($this->accounts->find($actor->tenantId, $account), $project);
+        $this->participant($actor, $project, $account);
+    }
+
+    public function participant(Actor $actor, int $project, int $account): Actor
+    {
+        $participant = $this->accounts->find($actor->tenantId, $account);
+        $this->view($participant, $project);
+        return $participant;
     }
 
     public function timeline(Actor $actor, int $id, int $after): array

@@ -16,7 +16,7 @@ from git_delivery_http import commit_series
 from testing_http import upload
 
 
-def content(client, path, body=None, status=200, *, csrf=True):
+def content(client, path, body=None, status=200, *, csrf=True, filename="artifact.bin"):
     headers = {"Content-Type": "application/octet-stream"}
     if csrf and client.csrf:
         headers["X-CSRF-Token"] = client.csrf
@@ -29,7 +29,7 @@ def content(client, path, body=None, status=200, *, csrf=True):
         assert response.status == status, (response.status, response.read(1000))
         assert response.headers["Cache-Control"] == "no-store"
         if body is None and status == 200:
-            assert response.headers["Content-Disposition"] == 'attachment; filename="artifact.bin"'
+            assert response.headers["Content-Disposition"] == f'attachment; filename="{filename}"'
             return response.read()
         return json.load(response)
 
@@ -125,7 +125,7 @@ def run(origin, peer, after_review=None):
 
     passing = b'<testcase name="header"/>'
     failing = b'<testcase name="header"><failure message="header missing"/></testcase>'
-    junit(p2, 1, passing)
+    passed_report = junit(p2, 1, passing)
     blocked = release.call(c1 + "/submit", "POST", m1, 409)
     assert blocked["error"] == "candidate_gate_blocked" and blocked["details"]["counts"]["missing"] == 2
     junit(p1, 1, passing)
@@ -133,7 +133,7 @@ def run(origin, peer, after_review=None):
     approve1 = dict(m1, gate_digest=gate1["gate_digest"], note="Checked dispatch scope and test results")
     assert release.call(c1 + "/approve", "POST", approve1, 403)["error"] == "project_product_owner_required"
     assert owner.call(c1 + "/approve", "POST", approve1)["approval_valid"]
-    junit(p1, 2, failing)
+    failed_report = junit(p1, 2, failing)
     assert not owner.call(c1)["approval_valid"]
     assert owner.call(c1 + "/approve", "POST", approve1, 409)["error"] == "candidate_gate_blocked"
     junit(p1, 3, passing)
@@ -170,8 +170,28 @@ def run(origin, peer, after_review=None):
     assert owner.call(c2 + "/approve", "POST", dict(m2, gate_digest=gate2["gate_digest"], note="Wrong gate"), 409)["error"] == "candidate_gate_changed"
     assert owner.call(c2 + "/approve", "POST", dict(m2, gate_digest=pending["gate_digest"], note="Replacement reviewed"))["approval_valid"]
     if after_review is not None:
+        engineer, engineer_id = member(admin, origin, tenant, password, "engineer")
+        owner.call(f"{base}/members/{engineer_id}", "PUT", {"enabled": True})
+        second_signer = Session(peer)
+        second_signer.login(tenant, "business@example.test", password)
+        date = baseline["criteria"][0]
+        task = owner.call(base + "/work-items", "POST", dict(code="render-date", title="Render dispatch date", team="dispatch",
+                          criterion_id=date["criterion_id"], revision_id=date["revision_id"], effort=2, owner_id=engineer_id), 201)
+        task_url = f"{base}/work-items/{task['id']}"
+        engineer.call(task_url + "/claim", "POST")
+        for snapshot in snapshots:
+            engineer.call(task_url + "/git-links", "POST", dict(repository_id=repo["id"], snapshot_id=snapshot["id"]))
+        fail = next(row for row in failed_report["results"] if row["outcome"] == "failed")
+        retest = next(row for row in passed_report["results"] if row["case_version_id"] == fail["case_version_id"])
+        defect = tester.call(base + "/defects", "POST", dict(failed_result_id=fail["id"], title="Fix dispatch header",
+                             severity="major", description="The original output omitted the header"), 201)
+        defect_url = f"{base}/defects/{defect['id']}"
+        engineer.call(defect_url + "/fix", "POST", dict(artifact_id=artifact2["id"], note="Header updated"))
+        tester.call(defect_url + "/close", "POST", dict(retest_result_id=retest["id"], note="Retest approved"))
+        trace = dict(peer=second_signer, task_id=task["id"], engineer_id=engineer_id, defect_id=defect["id"],
+                     failed_id=fail["id"], retest_id=retest["id"], commit_sha=second_commit, requirement_id=req["id"])
         after_review(base, baseline, [p1, p2], development, staging, release, release_peer, owner, business, tester, outside,
-                     event, first_commit, fork[0])
+                     event, first_commit, fork[0], trace)
     criterion = baseline["criteria"][0]
     reviewed = owner.call(base + "/changes", "POST", dict(baseline_id=baseline["id"], reason="Published export contract changed",
                           criteria=[dict(criterion_id=criterion["criterion_id"], title="UTC Date", statement="Use an ISO date")]), 201)

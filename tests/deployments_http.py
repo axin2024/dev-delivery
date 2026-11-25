@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from release_candidates_http import content, run
+from signoffs_http import verify_signoff
 from testing_http import upload
 
 
@@ -34,7 +35,7 @@ def send_signed(origin, connector, event, status=200, *, corrupt=False):
         return result
 
 
-def exercise(base, baseline, plans, dev, staging, release, peer, owner, business, tester, outside, git_event, first_commit, hotfix_commit):
+def exercise(base, baseline, plans, dev, staging, release, peer, owner, business, tester, outside, git_event, first_commit, hotfix_commit, trace):
     prod = release.call(base + "/environments", "POST", dict(code="prod", name="Production", stage="production"), 201)
     secondary_qa = release.call(base + "/environments", "POST", dict(code="qa2", name="QA secondary", stage="staging"), 201)
     endpoint = base + "/deployments"
@@ -165,6 +166,7 @@ def exercise(base, baseline, plans, dev, staging, release, peer, owner, business
                 changed = release.call(f"{base}/candidates/{hotfix['id']}")
                 assert not changed["approval_valid"] and not changed["quality"]["production_base_current"]
 
+        archived = verify_signoff(base, baseline, plans[1], prod1, prod2, owner, business, tester, outside, trace)
         request = dict(environment_id=prod["id"], expected_head_id=prod2["id"], request_key="rollback/old-export",
                        reason="Restore the earlier approved export", artifact_sha256=prod1["artifact_sha256"])
         rollback_path = f"{endpoint}/{prod2['id']}/rollback"
@@ -178,6 +180,9 @@ def exercise(base, baseline, plans, dev, staging, release, peer, owner, business
         assert live.read_bytes() == content(release, f"{base}/artifacts/{prod1['artifact_id']}/content")
         assert release.call(f"{endpoint}/{prod2['id']}")["current_head_id"] == rollback["id"]
         assert release.call(rollback_path, "POST", request, 201)["id"] == rollback["id"]
+        old = business.call(f"{base}/signoffs/{prod2['id']}")
+        assert old["current_head_id"] == rollback["id"] and old["report"]["digest"] == archived and not old["can_decide"]
+        assert business.call(f"{base}/signoffs/{rollback['id']}", status=404)["error"] == "signoff_deployment_not_found"
     print("AC-11 and AC-12 passed: artifact promotion, timeout readback, exactly-once confirmation and rollback lineage.")
 
 

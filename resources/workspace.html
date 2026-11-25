@@ -173,6 +173,38 @@
                 <button>保存依赖</button>
               </form>
             </div>
+            <form id="link-git" hidden>
+              <label>仓库 ID<input name="repository_id" type="number" min="1" required></label>
+              <label>提交快照 ID<input name="snapshot_id" type="number" min="1" required></label>
+              <button>关联提交</button>
+            </form>
+            <div id="git-links" class="item-list"></div>
+          </section>
+          <section class="panel">
+            <h2>代码仓库与构建</h2>
+            <div id="repositories" class="item-list"></div>
+            <details id="repository-editor" hidden>
+              <summary>登记代码仓库</summary>
+              <form id="register-repository">
+                <label>仓库名称<input name="name" required></label>
+                <label>代码托管平台<select name="provider">
+                  <option value="github">GitHub</option><option value="gitee">Gitee</option>
+                  <option value="gitlab">GitLab</option><option value="manual">离线仓库</option>
+                </select></label>
+                <label>平台仓库标识<input name="provider_repository_id" required></label>
+                <button>登记仓库</button>
+              </form>
+            </details>
+            <div id="repository-detail"></div>
+            <div id="snapshot-detail"></div>
+            <details id="import-editor" hidden>
+              <summary>导入 Git 或构建回执</summary>
+              <form id="import-git">
+                <label>事件 JSON<textarea name="event" rows="8" required></textarea></label>
+                <button>导入回执</button>
+              </form>
+            </details>
+            <div id="repository-events"></div>
           </section>
           <section class="panel">
             <h2>关联测试用例</h2>

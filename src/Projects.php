@@ -117,6 +117,15 @@ final readonly class Projects
         return $project;
     }
 
+    public function lockForEngineering(Actor $actor, int $id): array
+    {
+        $project = $this->project($actor, $id, true);
+        if (!$actor->has('engineer')) {
+            throw new Problem(403, 'project_engineer_required');
+        }
+        return $project;
+    }
+
     public function assertParticipant(Actor $actor, int $project, int $account): void
     {
         $this->view($this->accounts->find($actor->tenantId, $account), $project);

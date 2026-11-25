@@ -41,4 +41,6 @@ fieldset { display: grid; gap: .7rem; margin: .7rem 0; border: 1px solid #cdd9e2
 .alert { color: #7d2026; }
 #work-detail, #sprint-detail, #change-detail { margin-top: .75rem; }
 .panel details { margin: .75rem 0; }
+#snapshot-detail article, #repository-detail article { display: grid; gap: .4rem; }
+#repository-detail code, #snapshot-detail code { user-select: all; }
 @media (max-width: 48rem) { #workspace { grid-template-columns: 1fr; } }

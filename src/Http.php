@@ -21,10 +21,21 @@ final class Http
             return;
         }
         try {
-            $this->startSession();
             $store = Store::connect();
             $audit = new Audit($store);
             $accounts = new Accounts($store, $audit);
+            $projects = new Projects($store, $accounts, $audit);
+            $git = new GitDelivery($store, $projects, $audit);
+            $gitEvents = new GitEvents($store, $projects, $git);
+            if (preg_match('~\A/api/connectors/git/([0-9a-f]{32})\z~', $path, $connector)) {
+                if ($method !== 'POST') {
+                    throw new Problem(405, 'method_not_allowed');
+                }
+                $this->respond(200, $gitEvents->receive($connector[1], $_SERVER['HTTP_X_DELIVERY_TIMESTAMP'] ?? '',
+                    $_SERVER['HTTP_X_DELIVERY_SIGNATURE'] ?? '', $this->rawJson()));
+                return;
+            }
+            $this->startSession();
             if ($method === 'GET' && $path === '/api/session') {
                 $actor = isset($_SESSION['account_id']) ? $this->actor($accounts)->view() : null;
                 $this->respond(200, ['csrf_token' => $_SESSION['csrf'], 'actor' => $actor]);
@@ -52,11 +63,10 @@ final class Http
                     default => throw new Problem(405, 'method_not_allowed'),
                 };
             } else {
-                $projects = new Projects($store, $accounts, $audit);
                 $baselines = new Baselines($store, $projects, $audit);
                 $changes = new Changes($store, $projects, $baselines, $audit);
                 $planning = new Planning($store, $projects, $audit);
-                [$status, $result] = $this->dispatch($method, $path, $actor, $projects, $baselines, $changes, $planning, $input);
+                [$status, $result] = $this->dispatch($method, $path, $actor, $projects, $baselines, $changes, $planning, $git, $gitEvents, $input);
             }
             $this->respond($status, $result);
         } catch (Problem $error) {
@@ -69,7 +79,7 @@ final class Http
 
     private function dispatch(
         string $method, string $path, Actor $actor, Projects $projects, Baselines $baselines,
-        Changes $changes, Planning $planning, array $body,
+        Changes $changes, Planning $planning, GitDelivery $git, GitEvents $gitEvents, array $body,
     ): array
     {
         if ($path === '/api/projects') {
@@ -84,7 +94,7 @@ final class Http
         }
         $project = (int) $parts[1];
         $relative = $parts[2] ?? '';
-        if (preg_match('~\A/(members|requirements|criteria|baselines|changes|sprints|work-items)/([1-9][0-9]{0,17})(/criteria|/decision|/schedule|/timeline)?\z~', $relative, $item)) {
+        if (preg_match('~\A/(members|requirements|criteria|baselines|changes|sprints|work-items)/([1-9][0-9]{0,17})(/[a-z-]+)?\z~', $relative, $item)) {
             $id = (int) $item[2];
             return match ($method . ' ' . $item[1] . ($item[3] ?? '')) {
                 'PUT members' => [200, $projects->setMember($actor, $project, $id, $body)],
@@ -99,6 +109,9 @@ final class Http
                 'GET work-items' => [200, $planning->workView($actor, $project, $id)],
                 'GET work-items/timeline' => [200, $planning->workTimeline($actor, $project, $id, $this->cursor())],
                 'PUT work-items/schedule' => [200, $planning->schedule($actor, $project, $id, $body)],
+                'POST work-items/claim' => [200, $git->claim($actor, $project, $id)],
+                'GET work-items/git-links' => [200, $git->workLinks($actor, $project, $id, $this->cursor())],
+                'POST work-items/git-links' => [200, $git->link($actor, $project, $id, $body)],
                 default => throw new Problem(404, 'route_not_found'),
             };
         }
@@ -106,6 +119,18 @@ final class Http
             return match ($method) {
                 'PUT', 'DELETE' => [200, $planning->setDependency($actor, $project, (int) $item[1], (int) $item[2], $method === 'PUT' ? $body : null)],
                 default => throw new Problem(405, 'method_not_allowed'),
+            };
+        }
+        if (preg_match('~\A/repositories/([1-9][0-9]{0,17})(/events|/connector|/snapshots/([1-9][0-9]{0,17}))?\z~', $relative, $item)) {
+            $id = (int) $item[1];
+            $route = isset($item[3]) ? '/snapshots' : ($item[2] ?? '');
+            return match ($method . ' ' . $route) {
+                'GET ' => [200, $git->branches($actor, $project, $id, $this->cursor())],
+                'GET /snapshots' => [200, $git->snapshotView($actor, $project, $id, (int) $item[3])],
+                'GET /events' => [200, $gitEvents->history($actor, $project, $id, $this->cursor())],
+                'POST /events' => [200, $gitEvents->imported($actor, $project, $id, $body)],
+                'POST /connector' => [200, $gitEvents->credentials($actor, $project, $id)],
+                default => throw new Problem(404, 'route_not_found'),
             };
         }
         return match ($method . ' ' . $relative) {
@@ -125,6 +150,8 @@ final class Http
             'POST /work-items' => [201, $planning->createWork($actor, $project, $body)],
             'GET /test-cases' => [200, $planning->listing($actor, $project, $this->cursor(), 'test_cases')],
             'POST /test-cases' => [201, $planning->createCase($actor, $project, $body)],
+            'GET /repositories' => [200, $git->listing($actor, $project, $this->cursor())],
+            'POST /repositories' => [201, $git->register($actor, $project, $body)],
             default => throw new Problem(404, 'route_not_found'),
         };
     }
@@ -144,13 +171,7 @@ final class Http
         if (!hash_equals($_SESSION['csrf'], $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '')) {
             throw new Problem(403, 'csrf_invalid');
         }
-        if (strtolower(trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0])) !== 'application/json') {
-            throw new Problem(415, 'json_required');
-        }
-        $body = file_get_contents('php://input', false, null, 0, 65_537);
-        if ($body === false || strlen($body) > 65_536) {
-            throw new Problem(413, 'payload_too_large');
-        }
+        $body = $this->rawJson();
         try {
             if (!str_starts_with(ltrim($body), '{')) {
                 throw new Problem(400, 'json_object_required');
@@ -159,6 +180,18 @@ final class Http
         } catch (JsonException) {
             throw new Problem(400, 'invalid_json');
         }
+    }
+
+    private function rawJson(): string
+    {
+        if (strtolower(trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0])) !== 'application/json') {
+            throw new Problem(415, 'json_required');
+        }
+        $body = file_get_contents('php://input', false, null, 0, 65_537);
+        if ($body === false || strlen($body) > 65_536) {
+            throw new Problem(413, 'payload_too_large');
+        }
+        return $body;
     }
 
     private function actor(Accounts $accounts): Actor

@@ -2,13 +2,14 @@
 
 const $ = id => document.getElementById(id);
 const state = {actor: null, csrf: null, project: null, scope: null, projectsAfter: null, accountsAfter: null,
-  baselinesAfter: null, eventsAfter: null, baseline: null, change: null, work: null, sprint: null};
+  baselinesAfter: null, eventsAfter: null, baseline: null, change: null, work: null, sprint: null, repository: null};
 const eventTitles = {
   created: '创建项目', charter_revised: '修订项目章程', member_added: '加入项目成员', member_removed: '移出项目成员',
   requirement_added: '新增需求', criterion_added: '新增验收标准', criterion_revised: '修订验收标准',
   baseline_frozen: '冻结基线', change_proposed: '提交变更', change_approved: '批准变更', change_rejected: '驳回变更',
   sprint_created: '创建迭代', work_item_created: '创建任务', work_item_scheduled: '调整任务排期',
-  dependency_saved: '保存依赖', dependency_removed: '移除依赖', test_case_created: '登记用例'
+  dependency_saved: '保存依赖', dependency_removed: '移除依赖', test_case_created: '登记用例',
+  repository_registered: '登记代码仓库', work_item_claimed: '认领任务', git_snapshot_linked: '关联提交快照'
 };
 const errors = {
   invalid_credentials: '租户、邮箱或密码有误。',
@@ -27,6 +28,12 @@ const errors = {
   sprint_team_mismatch: '请选择任务所属团队的迭代。',
   dependency_cycle: '请移除循环依赖后再安排迭代。',
   dependency_schedule_conflict: '请调整前置任务排期或依赖的截止日期。',
+  repository_identity_exists: '此平台和仓库标识已登记。',
+  connector_repository_mismatch: '回执中的平台和仓库标识必须与当前仓库一致。',
+  connector_not_configured: '管理员需要先在服务器设置连接器主密钥。',
+  connector_event_content_conflict: '此事件编号已用于不同的回执内容。',
+  git_reference_stale: '分支已经移动，请核对原提交与当前提交。',
+  connector_snapshot_commit_mismatch: '回执里的提交与所指向的快照不一致。',
   csrf_invalid: '会话已过期，请刷新页面后登录。'
 };
 let busy = false;
@@ -434,6 +441,16 @@ async function viewWork(id) {
   if (work.review_change_id) {
     target.append(actionButton('查看待确认变更 #' + work.review_change_id, () => viewChange(work.review_change_id)));
   }
+  const mayClaim = state.actor.roles.includes('engineer') && state.actor.account_id === work.owner_id;
+  if (work.claimed_by) {
+    target.append(textNode('p', '已认领 · 成员 #' + work.claimed_by + ' · ' + work.claimed_at + ' UTC'));
+  } else if (mayClaim) {
+    target.append(actionButton('认领任务', async () => {
+      await call(workPath(id) + '/claim', 'POST');
+      await viewWork(id);
+      showMessage('任务已认领。');
+    }));
+  }
   const dependencies = document.createElement('ul');
   for (const edge of work.dependencies) {
     const row = textNode('li', '前置任务 #' + edge.predecessor_id + ' ' + edge.team + ' / ' + edge.code
@@ -451,6 +468,92 @@ async function viewWork(id) {
   $('work-actions').hidden = !canPlan();
   $('schedule-work').elements.sprint_id.value = work.sprint_id ?? '';
   $('save-dependency').reset();
+  $('link-git').reset();
+  $('link-git').hidden = !mayClaim || !work.claimed_by;
+  await readWorkLinks(id);
+}
+
+function readWorkLinks(id) {
+  return readPage('/work-items/' + id + '/git-links', 'git-links', link => actionButton(
+    link.repository_name + ' / ' + link.branch + '　' + link.commit_sha.slice(0, 12),
+    async () => {
+      await viewRepository(link.repository_id);
+      await viewSnapshot(link.repository_id, link.snapshot_id);
+      $('snapshot-detail').scrollIntoView({block: 'start'});
+    }));
+}
+
+const buildStatus = {queued: '排队中', running: '执行中', passed: '通过', failed: '失败', cancelled: '已取消'};
+const mergeStatus = {open: '未合并', merged: '已合并', closed: '已关闭'};
+
+function readRepositories() {
+  return readPage('/repositories', 'repositories', item => actionButton('#' + item.id + '　' + item.name + ' · ' + item.provider,
+    () => viewRepository(item.id)));
+}
+
+async function viewRepository(id, after = 0) {
+  const repository = await call(projectPath('/repositories/') + id + '?after=' + after);
+  state.repository = repository;
+  const target = $('repository-detail');
+  if (!after) {
+    target.replaceChildren(textNode('h3', '仓库 #' + id + '　' + repository.name),
+      textNode('p', repository.provider + ' / ' + repository.provider_repository_id));
+    target.append(actionButton('查看回执记录', () => readRepositoryEvents(id)));
+    if (canPlan()) target.append(actionButton('读取连接器配置', async () => {
+      const secret = await call(projectPath('/repositories/') + id + '/connector', 'POST');
+      const configuration = document.createElement('article');
+      configuration.append(textNode('h3', '连接器配置'), textNode('p', '端点 ' + secret.path),
+        textNode('p', '签名密钥，仅用于连接器配置'), textNode('code', secret.signing_secret));
+      target.append(configuration);
+    }));
+    $('snapshot-detail').replaceChildren();
+    $('repository-events').replaceChildren();
+    $('import-git').reset();
+    $('import-editor').hidden = !canPlan();
+  }
+  for (const snapshot of repository.items) {
+    const row = document.createElement('article');
+    row.append(textNode('h3', snapshot.branch),
+      textNode('code', snapshot.commit_sha),
+      textNode('p', '快照 #' + snapshot.id + ' · 第 ' + snapshot.generation + ' 次推进 · '
+        + (buildStatus[snapshot.build_status] || '等待构建回执') + (snapshot.forced ? ' · 强制更新' : '')),
+      actionButton('查看快照 #' + snapshot.id, () => viewSnapshot(id, snapshot.id)));
+    target.append(row);
+  }
+  if (repository.next_after !== null) {
+    const more = actionButton('更多分支', async () => {
+      await viewRepository(id, repository.next_after);
+      more.remove();
+    });
+    target.append(more);
+  }
+}
+
+async function viewSnapshot(repo, id) {
+  const snapshot = await call(projectPath('/repositories/') + repo + '/snapshots/' + id);
+  const target = $('snapshot-detail');
+  const article = document.createElement('article');
+  article.append(textNode('h3', '快照 #' + id + '　' + snapshot.branch + (snapshot.current ? ' · 当前' : ' · 历史')),
+    textNode('code', snapshot.commit_sha), textNode('p', snapshot.message));
+  if (!snapshot.build_runs.length) article.append(textNode('p', '等待构建回执'));
+  for (const build of snapshot.build_runs) {
+    article.append(textNode('p', '构建 ' + build.provider_run_id + ' · ' + buildStatus[build.status]));
+  }
+  for (const merge of snapshot.merge_requests) {
+    article.append(textNode('p', '合并请求 ' + merge.remote_id + ' · ' + mergeStatus[merge.state] + ' · ' + merge.title));
+  }
+  target.replaceChildren(article);
+}
+
+function readRepositoryEvents(id) {
+  return readPage('/repositories/' + id + '/events', 'repository-events', row => {
+    const details = document.createElement('details');
+    details.append(textNode('summary', row.external_id + '　' + row.type + '　' + row.received_at + ' UTC'),
+      textNode('p', row.imported_by ? '导入成员 #' + row.imported_by : '连接器签名验证通过'),
+      textNode('code', row.payload_digest),
+      textNode('p', '处理结果 ' + row.receipt.state));
+    return details;
+  });
 }
 
 function readCases() {
@@ -464,13 +567,15 @@ function readCases() {
 }
 
 function resetDeliveryViews() {
-  state.baseline = state.change = state.work = state.sprint = null;
+  state.baseline = state.change = state.work = state.sprint = state.repository = null;
   resetProposal();
-  for (const id of ['changes', 'change-detail', 'sprints', 'sprint-detail', 'work-items', 'work-detail', 'test-cases']) {
+  for (const id of ['changes', 'change-detail', 'sprints', 'sprint-detail', 'work-items', 'work-detail', 'test-cases',
+    'repositories', 'repository-detail', 'snapshot-detail', 'repository-events', 'git-links']) {
     $(id).replaceChildren();
   }
-  for (const id of ['create-sprint', 'create-work', 'create-case', 'review-change', 'schedule-work', 'save-dependency']) $(id).reset();
-  for (const id of ['review-change', 'work-actions']) $(id).hidden = true;
+  for (const id of ['create-sprint', 'create-work', 'create-case', 'review-change', 'schedule-work', 'save-dependency',
+    'register-repository', 'import-git', 'link-git']) $(id).reset();
+  for (const id of ['review-change', 'work-actions', 'import-editor', 'link-git']) $(id).hidden = true;
 }
 
 function criterionInput(fields) {
@@ -488,10 +593,10 @@ async function viewProject(id) {
   $('edit-project').elements.charter.value = state.project.charter;
   $('baseline-detail').replaceChildren();
   const editable = canPlan();
-  for (const id of ['planning', 'change-editor', 'sprint-editor', 'work-editor', 'case-editor']) $(id).hidden = !editable;
+  for (const id of ['planning', 'change-editor', 'sprint-editor', 'work-editor', 'case-editor', 'repository-editor']) $(id).hidden = !editable;
   await Promise.all([
     ...(editable ? [readScope()] : []), readBaselines(), readTimeline(),
-    readChanges(), readSprints(), readWork(), readCases()
+    readChanges(), readSprints(), readWork(), readCases(), readRepositories()
   ]);
   $('project-detail').hidden = false;
 }
@@ -620,6 +725,32 @@ form('save-dependency', async fields => {
   const work = await call(workPath(state.work.id) + '/dependencies/' + fields.predecessor_id, 'PUT',
     {owner_id: Number(fields.owner_id), due_on: fields.due_on});
   await Promise.all([viewWork(work.id), readTimeline()]);
+});
+form('register-repository', async fields => {
+  const repository = await call(projectPath('/repositories'), 'POST', fields);
+  $('register-repository').reset();
+  await Promise.all([readRepositories(), viewRepository(repository.id), readTimeline()]);
+});
+form('import-git', async fields => {
+  let event;
+  try {
+    event = JSON.parse(fields.event);
+  } catch {
+    throw new Error('请输入完整的 JSON 事件。');
+  }
+  const repo = state.repository.id;
+  const receipt = await call(projectPath('/repositories/') + repo + '/events', 'POST', event);
+  await viewRepository(repo);
+  const snapshotId = receipt.snapshot?.id || receipt.snapshot_id;
+  if (snapshotId) await viewSnapshot(repo, snapshotId);
+  showMessage('回执 ' + receipt.event_id + ' 已记录。');
+});
+form('link-git', async fields => {
+  await call(workPath(state.work.id) + '/git-links', 'POST',
+    {repository_id: Number(fields.repository_id), snapshot_id: Number(fields.snapshot_id)});
+  await readWorkLinks(state.work.id);
+  $('link-git').reset();
+  showMessage('提交快照已关联到任务。');
 });
 $('more-projects').addEventListener('click', () => run(() => readProjects(true)));
 $('more-accounts').addEventListener('click', () => run(() => readAccounts(true)));

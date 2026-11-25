@@ -75,7 +75,7 @@ final readonly class Planning
     {
         $this->projects->view($actor, $project);
         $query = match ($entity) {
-            'work_items' => 'SELECT id, code, title, criterion_id, revision_id, team, owner_id, effort, sprint_id, review_change_id FROM work_items',
+            'work_items' => 'SELECT id, code, title, criterion_id, revision_id, team, owner_id, claimed_by, claimed_at, effort, sprint_id, review_change_id FROM work_items',
             'test_cases' => 'SELECT id, code, title, criterion_id, revision_id, steps, expected_result, review_change_id FROM test_cases',
             'sprints' => 'SELECT id, code, title, team, starts_on, ends_on, capacity,
                 (SELECT COALESCE(SUM(w.effort),0) FROM work_items w WHERE (w.tenant_id,w.project_id,w.sprint_id)=(s.tenant_id,s.project_id,s.id)) AS used
@@ -258,7 +258,7 @@ final readonly class Planning
 
     private function work(Actor $actor, int $project, int $id): array
     {
-        return $this->store->one('SELECT id, criterion_id, revision_id, code, title, team, owner_id, effort, sprint_id, review_change_id
+        return $this->store->one('SELECT id, criterion_id, revision_id, code, title, team, owner_id, claimed_by, claimed_at, effort, sprint_id, review_change_id
             FROM work_items WHERE tenant_id=? AND project_id=? AND id=?', [$actor->tenantId, $project, $id])
             ?? throw new Problem(404, 'work_item_not_found');
     }

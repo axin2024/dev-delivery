@@ -1,0 +1,14 @@
+{
+    "name": "dev-delivery/platform",
+    "description": "Self-hosted engineering delivery and release evidence platform",
+    "type": "project",
+    "license": "Apache-2.0",
+    "require": {
+        "php": "^8.2",
+        "ext-mbstring": "*",
+        "ext-pdo_mysql": "*"
+    },
+    "autoload": {
+        "psr-4": {"DevDelivery\\": "src/"}
+    }
+}

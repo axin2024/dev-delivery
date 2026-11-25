@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>研发交付工作台</title>
+  <link rel="stylesheet" href="/workspace.css">
+  <script src="/workspace.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a href="/">Dev Delivery</a>
+    <span id="identity"></span>
+    <button id="logout" type="button" hidden>退出</button>
+  </header>
+  <main>
+    <p id="message" role="status" aria-live="polite" hidden></p>
+    <section id="authentication">
+      <h1>登录研发交付工作台</h1>
+      <form id="login">
+        <label>租户<input name="tenant" required autocomplete="organization"></label>
+        <label>邮箱<input name="email" type="email" required autocomplete="username"></label>
+        <label>密码<input name="password" type="password" required autocomplete="current-password"></label>
+        <button>登录</button>
+      </form>
+    </section>
+    <div id="workspace" hidden>
+      <aside>
+        <h2>项目</h2>
+        <nav id="projects" aria-label="项目"></nav>
+        <button id="more-projects" type="button" hidden>更多项目</button>
+        <details id="accounts" hidden>
+          <summary>创建成员</summary>
+          <form id="create-account">
+            <label>姓名<input name="name" required></label>
+            <label>邮箱<input name="email" type="email" required></label>
+            <label>初始密码<input name="password" type="password" required minlength="12" autocomplete="new-password"></label>
+            <label>角色<select name="role">
+              <option value="product">产品经理</option>
+              <option value="engineer">工程师</option>
+              <option value="tester">测试人员</option>
+              <option value="release_manager">发布经理</option>
+              <option value="business">业务签收人</option>
+            </select></label>
+            <button>创建</button>
+          </form>
+          <ul id="account-list"></ul>
+          <button id="more-accounts" type="button" hidden>更多成员</button>
+        </details>
+      </aside>
+      <div>
+        <details class="panel" id="new-project" hidden>
+          <summary>创建项目</summary>
+          <form id="create-project">
+            <label>项目编码<input name="code" required></label>
+            <label>项目名称<input name="title" required></label>
+            <label>项目章程<textarea name="charter" required></textarea></label>
+            <label>产品负责人账号 ID<input name="product_owner_id" type="number" min="1" required></label>
+            <label>业务签收人账号 ID<input name="business_signer_id" type="number" min="1" required></label>
+            <button>创建项目</button>
+          </form>
+        </details>
+        <section id="project-detail" hidden>
+          <h1 id="project-title"></h1>
+          <p id="project-charter"></p>
+          <div id="planning" hidden>
+            <details class="panel">
+              <summary>章程与成员</summary>
+              <form id="edit-project">
+                <label>项目名称<input name="title" required></label>
+                <label>项目章程<textarea name="charter" required></textarea></label>
+                <button>保存章程新版本</button>
+              </form>
+              <form id="project-member">
+                <label>成员账号 ID<input name="member_id" type="number" min="1" required></label>
+                <label>操作<select name="enabled"><option value="true">加入项目</option><option value="false">移出项目</option></select></label>
+                <button>保存成员</button>
+              </form>
+            </details>
+            <details class="panel">
+              <summary>添加需求和验收标准</summary>
+              <form id="create-requirement">
+                <label>需求编码<input name="code" required></label>
+                <label>需求名称<input name="title" required></label>
+                <label>背景与范围<textarea name="summary" required></textarea></label>
+                <button>添加需求</button>
+              </form>
+              <form id="create-criterion">
+                <label>所属需求<select name="requirement" id="requirement-options" required></select></label>
+                <label>标准编码<input name="code" required></label>
+                <label>标准名称<input name="title" required></label>
+                <label>验收条件<textarea name="statement" required></textarea></label>
+                <button>添加验收标准</button>
+              </form>
+            </details>
+            <section class="panel">
+              <h2>待冻结范围</h2>
+              <div id="scope"></div>
+              <form id="freeze">
+                <label>基线名称<input name="title" required></label>
+                <button>冻结基线</button>
+              </form>
+            </section>
+          </div>
+          <section class="panel">
+            <h2>已冻结基线</h2>
+            <div id="baselines"></div>
+            <button id="more-baselines" type="button" hidden>更多基线</button>
+            <div id="baseline-detail"></div>
+          </section>
+          <section class="panel">
+            <h2>项目时间线</h2>
+            <ol id="timeline"></ol>
+            <button id="more-events" type="button" hidden>更多事件</button>
+          </section>
+        </section>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

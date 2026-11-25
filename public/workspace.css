@@ -1,0 +1,38 @@
+:root {
+  font: 16px/1.55 system-ui, sans-serif;
+  background: #f0f4f7;
+  color: #152946;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+[hidden] { display: none !important; }
+.topbar { display: flex; align-items: center; gap: 1rem; padding: .9rem max(1rem, calc((100vw - 78rem) / 2)); background: #0e2637; color: white; }
+.topbar a { margin-right: auto; color: inherit; font-weight: 700; text-decoration: none; }
+main { max-width: 80rem; padding: 1.5rem 1rem; margin: auto; }
+h1, h2, h3 { line-height: 1.25; margin-top: 0; }
+h2 { font-size: 1.18rem; }
+h3 { font-size: 1rem; }
+button, input, select, textarea { font: inherit; }
+button { width: fit-content; padding: .55rem .85rem; border: 0; border-radius: .35rem; color: white; background: #17685c; cursor: pointer; }
+button:hover { background: #0d5147; }
+button:disabled { opacity: .55; cursor: default; }
+input, select, textarea { width: 100%; border: 1px solid #b3c3cf; border-radius: .35rem; padding: .45rem .6rem; background: white; color: inherit; }
+textarea { min-height: 4rem; resize: vertical; }
+form { display: grid; gap: .75rem; max-width: 34rem; margin: .8rem 0 0; }
+label { display: grid; gap: .2rem; }
+summary { cursor: pointer; font-weight: 650; }
+#authentication { max-width: 30rem; margin: 4vh auto; }
+#workspace { display: grid; grid-template-columns: minmax(13rem, 19rem) minmax(0, 1fr); gap: 1rem; }
+.panel, aside, #authentication { background: white; border: 1px solid #cdd9e2; border-radius: .6rem; padding: 1.15rem; margin-bottom: 1rem; }
+aside { align-self: start; }
+aside details { margin-top: 1rem; }
+nav, #baselines { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .7rem; }
+nav { flex-direction: column; }
+nav button, #baselines button { background: #e2eee9; color: #124238; max-width: 100%; overflow-wrap: anywhere; }
+#message { border-radius: .4rem; background: #dceee7; padding: .65rem 1rem; margin: 0 0 1rem; }
+#message.error { background: #ffe7e5; color: #7d2026; }
+article { border-top: 1px solid #dce5ec; padding: .85rem 0; }
+article p, #project-charter { white-space: pre-wrap; overflow-wrap: anywhere; }
+code { overflow-wrap: anywhere; }
+@media (max-width: 48rem) { #workspace { grid-template-columns: 1fr; } }

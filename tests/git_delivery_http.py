@@ -17,20 +17,24 @@ from urllib.request import Request, urlopen
 from baselines_http import member, provision
 
 
-def commit_series(name, count):
+def commit_series(name, count, *, fork_from_first=False):
     with tempfile.TemporaryDirectory(prefix="delivery-git-") as folder:
         def git(*args):
             return subprocess.run(["git", "-C", folder, *args], check=True, text=True, capture_output=True).stdout.strip()
 
         git("init", "--initial-branch=feature/export")
-        hashes = []
-        for index in range(count):
+        def create_commit(index):
             Path(folder, "contract.txt").write_text(f"{name} {index}\n", encoding="utf-8")
             git("add", "contract.txt")
             git("-c", "user.name=Dev Delivery Test", "-c", "user.email=fixture@example.test",
                 "-c", "commit.gpgsign=false", "-c", "core.hooksPath=.git/disabled-hooks",
                 "commit", "-m", f"Fixture {index}")
-            hashes.append(git("rev-parse", "HEAD"))
+            return git("rev-parse", "HEAD")
+
+        hashes = [create_commit(index) for index in range(count)]
+        if fork_from_first:
+            git("switch", "--create", "hotfix/export", hashes[0])
+            hashes.append(create_commit("hotfix"))
         return hashes
 
 

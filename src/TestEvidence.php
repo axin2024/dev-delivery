@@ -99,6 +99,7 @@ final readonly class TestEvidence
             if ($this->store->one('SELECT id FROM test_reports WHERE tenant_id=? AND project_id=? AND plan_id=? AND attempt=?', [...$identity, $attempt])) {
                 throw new Problem(409, 'test_attempt_already_recorded');
             }
+            (new ProductionFence($this->store))->checkTestPlan($actor, $project, $plan);
             $versions = $this->store->all('SELECT v.id, v.case_id, v.junit_class, v.junit_name FROM test_plan_cases c
                 JOIN test_case_versions v ON v.id=c.case_version_id
                 WHERE c.tenant_id=? AND c.project_id=? AND c.plan_id=?', $identity);

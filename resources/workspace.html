@@ -8,6 +8,7 @@
   <script src="/workspace.js" defer></script>
   <script src="/testing.js" defer></script>
   <script src="/release.js" defer></script>
+  <script src="/deployments.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -338,6 +339,11 @@
               <form id="create-candidate">
                 <label>版本编码<input name="code" maxlength="64" required></label>
                 <label>候选标题<input name="title" maxlength="160" required></label>
+                <label>版本类型<select name="track"><option value="release">正式版</option><option value="hotfix">热修版</option></select></label>
+                <div id="candidate-hotfix-base" hidden>
+                  <label>生产环境 ID<input name="production_environment_id" type="number" min="1"></label>
+                  <label>当前生产部署 ID<input name="production_base_id" type="number" min="1"></label>
+                </div>
                 <label>冻结基线 ID<input name="baseline_id" type="number" min="1" required></label>
                 <label>已登记制品 ID<input name="artifact_id" type="number" min="1" required></label>
                 <label>预发测试计划 ID<input name="test_plan_id" type="number" min="1" required></label>
@@ -361,6 +367,57 @@
               </form>
             </details>
             <div id="candidate-approvals" class="item-list"></div>
+          </section>
+          <section class="panel">
+            <h2>部署、查单与回滚</h2>
+            <details id="deployment-editor" hidden>
+              <summary>提交环境部署</summary>
+              <form id="request-deployment">
+                <label>候选 ID<input name="candidate_id" type="number" min="1" required></label>
+                <label>目标环境 ID<input name="environment_id" type="number" min="1" required></label>
+                <label>目标环境当前部署 ID（首次留空）<input name="expected_head_id" type="number" min="1"></label>
+                <label>前一级的成功部署 ID（开发留空）<input name="promotion_source_id" type="number" min="1"></label>
+                <label>制品 SHA-256<input name="artifact_sha256" maxlength="64" required pattern="[0-9A-Fa-f]{64}"></label>
+                <label>请求键<input name="request_key" maxlength="160" required></label>
+                <label>部署说明<textarea name="reason" maxlength="1000" required></textarea></label>
+                <button>登记部署请求</button>
+              </form>
+            </details>
+            <details>
+              <summary>按请求键查单</summary>
+              <form id="lookup-deployment">
+                <label>环境 ID<input name="environment_id" type="number" min="1" required></label>
+                <label>请求键<input name="request_key" maxlength="160" required></label>
+                <button>查询部署状态</button>
+              </form>
+            </details>
+            <div id="deployments" class="item-list"></div>
+            <div id="deployment-detail"></div>
+            <details id="deployment-timeout" hidden>
+              <summary>登记执行结果待核实</summary>
+              <form id="mark-deployment-unknown">
+                <label>超时情况<textarea name="reason" maxlength="1000" required></textarea></label>
+                <button>登记结果待核实</button>
+              </form>
+            </details>
+            <details id="deployment-import" hidden>
+              <summary>离线导入部署回执</summary>
+              <form id="import-deployment-receipt">
+                <label>工具回执 JSON<textarea name="receipt" required rows="8"></textarea></label>
+                <button>导入部署回执</button>
+              </form>
+            </details>
+            <details id="deployment-rollback" hidden>
+              <summary>回滚当前生产部署</summary>
+              <p id="deployment-restore-target"></p>
+              <form id="rollback-deployment">
+                <label>新请求键<input name="request_key" maxlength="160" required></label>
+                <label>回滚原因<textarea name="reason" maxlength="1000" required></textarea></label>
+                <button>提交回滚请求</button>
+              </form>
+            </details>
+            <div id="deployment-receipts" class="item-list"></div>
+            <div id="deployment-connector"></div>
           </section>
           <section class="panel">
             <h2>项目时间线</h2>

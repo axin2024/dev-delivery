@@ -10,6 +10,12 @@
 
 一份候选固定使用一份预发计划。另一制品、构建或环境的结果只能用于对应计划。更高序号的报告若替换了当前必过结果，审批需要基于新证据重新提交。标准修订后，使用新基线创建后继候选。
 
+## 热修与正式版本并行
+
+打开生产环境当前成功部署，使用该部署建立热修候选。记录仓库中新热修分支的第一个快照，提交 SHA 使用生产部署的提交。推送修复后，连接器再记录热修提交和构建回执。候选保存生产部署、分支起点和修复制品的证据，拒收同分支构建、基点不符及审批范围内发生过强制更新的分支。
+
+为热修配置独立预发环境和计划，以便和正式版本同时测试、审批。生产版本发生变化后，已经拟定的热修候选需要根据新的生产基点重新建立。热修生产申请使用原基点所属环境。
+
 ## API
 
 以下路径相对于 `/api/projects/{project_id}`。所有写入提交登录会话和 `X-CSRF-Token`。
@@ -18,7 +24,7 @@
 | --- | --- |
 | `PUT /artifacts/{id}/content` | `application/octet-stream` 请求体，最多 8 MiB，若内容摘要与制品登记不一致则返回 HTTP 422 |
 | `GET /artifacts/{id}/content` | 发布经理、测试人员或工程师下载已校验的文件，下载前再次校验摘要 |
-| `POST /candidates` | JSON 字段 `code`、`title`、`baseline_id`、`artifact_id`、`test_plan_id` |
+| `POST /candidates` | JSON 字段 `code`、`title`、`baseline_id`、`artifact_id`、`test_plan_id`。热修加 `track=hotfix`、`production_environment_id`、`production_base_id` |
 | `GET /candidates/{id}` | 查看候选清单、门禁状态、审批是否有效及前后继关系 |
 | `POST /candidates/{id}/freeze`、`/start-testing`、`/submit` | JSON 字段 `manifest_digest` |
 | `POST /candidates/{id}/approve` | JSON 字段 `manifest_digest`、`gate_digest`、`note` |

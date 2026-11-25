@@ -34,7 +34,7 @@ def content(client, path, body=None, status=200, *, csrf=True):
         return json.load(response)
 
 
-def run(origin, peer):
+def run(origin, peer, after_review=None):
     if not re.search(r"(?:^mysql:|;)dbname=delivery_test_[a-z0-9_]+(?:;|$)", os.environ.get("DELIVERY_DSN", "")):
         raise RuntimeError("Use an isolated delivery_test_* database.")
     token = secrets.token_hex(5)
@@ -80,7 +80,7 @@ def run(origin, peer):
         return release.call(base + "/artifacts", "POST", dict(build_id=build["build_id"], name="dispatch.bin",
                             sha256=hashlib.sha256(blob).hexdigest()), 201)
 
-    first_commit, second_commit = commit_series("release", 2)
+    first_commit, second_commit, *fork = commit_series("release", 2, fork_from_first=after_review is not None)
     h1, h2 = b"dispatch first\x00\xff\n", b"dispatch next\x00\xfe\n"
     artifact1, artifact2 = artifact(first_commit, h1, 1), artifact(second_commit, h2, 2)
     path1 = f"{base}/artifacts/{artifact1['id']}/content"
@@ -169,6 +169,9 @@ def run(origin, peer):
     assert pending["state"] == "pending_approval" and pending["quality"]["result_ids"] != gate2["quality"]["result_ids"]
     assert owner.call(c2 + "/approve", "POST", dict(m2, gate_digest=gate2["gate_digest"], note="Wrong gate"), 409)["error"] == "candidate_gate_changed"
     assert owner.call(c2 + "/approve", "POST", dict(m2, gate_digest=pending["gate_digest"], note="Replacement reviewed"))["approval_valid"]
+    if after_review is not None:
+        after_review(base, baseline, [p1, p2], development, staging, release, release_peer, owner, business, tester, outside,
+                     event, first_commit, fork[0])
     criterion = baseline["criteria"][0]
     reviewed = owner.call(base + "/changes", "POST", dict(baseline_id=baseline["id"], reason="Published export contract changed",
                           criteria=[dict(criterion_id=criterion["criterion_id"], title="UTC Date", statement="Use an ISO date")]), 201)

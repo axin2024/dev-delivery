@@ -17,16 +17,28 @@ final readonly class ReleaseCandidates
         $baselineId = Input::integer($input, 'baseline_id', 1);
         $artifactId = Input::integer($input, 'artifact_id', 1);
         $planId = Input::integer($input, 'test_plan_id', 1);
-        return $this->store->transaction(function () use ($actor, $project, $previous, $code, $title, $baselineId, $artifactId, $planId): array {
+        $track = $previous === null ? Input::choice($input + ['track' => 'release'], 'track', ['release', 'hotfix']) : null;
+        $production = $track === 'hotfix' ? Input::integer($input, 'production_environment_id', 1) : null;
+        $base = $track === 'hotfix' ? Input::integer($input, 'production_base_id', 1) : null;
+        return $this->store->transaction(function () use (
+            $actor, $project, $previous, $code, $title, $baselineId, $artifactId, $planId, $track, $production, $base,
+        ): array {
             $this->projects->lockForRelease($actor, $project);
             $identity = [$actor->tenantId, $project];
             $prior = $previous === null ? null : $this->row($actor, $project, $previous);
             $code ??= $prior['code'];
+            if ($prior) {
+                $track = $prior['track'];
+                $production = $prior['production_environment_id'];
+                $base = $prior['production_base_id'];
+            }
             $revision = $prior === null ? 1 : $prior['revision'] + 1;
-            $existing = $this->store->one('SELECT id, title, baseline_id, artifact_id, test_plan_id FROM release_candidates
+            $existing = $this->store->one('SELECT id, title, baseline_id, artifact_id, test_plan_id, track, production_environment_id, production_base_id FROM release_candidates
                 WHERE tenant_id=? AND project_id=? AND code=? AND revision=?', [...$identity, $code, $revision]);
             if ($existing) {
-                if ([$existing['title'], $existing['baseline_id'], $existing['artifact_id'], $existing['test_plan_id']] !== [$title, $baselineId, $artifactId, $planId]) {
+                $existingFields = [$existing['title'], $existing['baseline_id'], $existing['artifact_id'], $existing['test_plan_id'],
+                    $existing['track'], $existing['production_environment_id'], $existing['production_base_id']];
+                if ($existingFields !== [$title, $baselineId, $artifactId, $planId, $track, $production, $base]) {
                     throw new Problem(409, 'candidate_revision_exists', ['candidate_id' => $existing['id']]);
                 }
                 return $this->view($actor, $project, $existing['id']);
@@ -34,11 +46,17 @@ final readonly class ReleaseCandidates
             if ($prior && in_array($prior['state'], ['superseded', 'deployed', 'accepted'], true)) {
                 throw new Problem(409, 'candidate_cannot_be_replaced');
             }
+            if ($prior && ($active = $this->store->one('SELECT id FROM deployments
+                WHERE tenant_id=? AND project_id=? AND candidate_id=? AND active_slot=1 ORDER BY id LIMIT 1', [...$identity, $previous]))) {
+                throw new Problem(409, 'candidate_deployment_active', ['deployment_id' => $active['id']]);
+            }
             if ($prior && [$prior['baseline_id'], $prior['artifact_id'], $prior['test_plan_id']] === [$baselineId, $artifactId, $planId]) {
                 throw new Problem(422, 'candidate_targets_unchanged');
             }
 
             $artifact = $this->targets->artifact($actor, $project, $artifactId);
+            $productionBase = $track === 'hotfix'
+                ? (new HotfixBase($this->store))->fromProduction($actor, $project, $production, $base, $artifact) : null;
             $plan = $this->plans->target($actor, $project, $planId);
             if ($plan['baseline_id'] !== $baselineId || $plan['artifact_id'] !== $artifactId) {
                 throw new Problem(409, 'candidate_test_plan_target_mismatch');
@@ -57,7 +75,8 @@ final readonly class ReleaseCandidates
                 throw new Problem(422, 'candidate_coverage_missing', ['criterion_revision_ids' => $missing]);
             }
             $manifest = self::encode([
-                'version' => 1, 'code' => $code, 'revision' => $revision, 'previous_id' => $previous,
+                'version' => 2, 'code' => $code, 'revision' => $revision, 'previous_id' => $previous, 'track' => $track,
+                'production_base' => $productionBase,
                 'baseline_id' => $baselineId, 'baseline_digest' => $baseline['manifest_digest'], 'scope' => $scope,
                 'artifact_id' => $artifactId, 'artifact_sha256' => $artifact['sha256'], 'build_id' => $artifact['build_id'],
                 'provider_run_id' => $artifact['provider_run_id'], 'repository_id' => $artifact['repository_id'],
@@ -66,8 +85,10 @@ final readonly class ReleaseCandidates
             ]);
             $digest = hash('sha256', $manifest);
             $id = $this->store->insert('INSERT INTO release_candidates (tenant_id, project_id, code, revision, previous_id, title,
-                baseline_id, artifact_id, test_plan_id, manifest, manifest_digest, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                [...$identity, $code, $revision, $previous, $title, $baselineId, $artifactId, $planId, $manifest, $digest, $actor->accountId]);
+                baseline_id, artifact_id, test_plan_id, manifest, manifest_digest, created_by, track, production_environment_id, production_base_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                [...$identity, $code, $revision, $previous, $title, $baselineId, $artifactId, $planId, $manifest, $digest,
+                    $actor->accountId, $track, $production, $base]);
             foreach ($scope as $criterion) {
                 $this->store->execute('INSERT INTO candidate_scope (tenant_id, project_id, candidate_id, criterion_id, revision_id)
                     VALUES (?, ?, ?, ?, ?)', [...$identity, $id, $criterion['criterion_id'], $criterion['revision_id']]);
@@ -107,8 +128,9 @@ final readonly class ReleaseCandidates
                 throw new Problem(409, 'candidate_state_conflict');
             }
             $quality = $this->quality($actor, $project, $candidate);
-            if (!$quality['artifact_verified'] || $quality['stale_criteria']) {
-                throw new Problem(409, 'candidate_target_not_ready', ['stale_criteria' => $quality['stale_criteria'], 'artifact_verified' => $quality['artifact_verified']]);
+            if (!$quality['artifact_verified'] || !$quality['production_base_current'] || $quality['stale_criteria']) {
+                throw new Problem(409, 'candidate_target_not_ready', ['stale_criteria' => $quality['stale_criteria'],
+                    'artifact_verified' => $quality['artifact_verified'], 'production_base_current' => $quality['production_base_current']]);
             }
             if ($state !== $to) {
                 $this->changeState($actor, $project, $id, $to);
@@ -150,7 +172,7 @@ final readonly class ReleaseCandidates
     public function listing(Actor $actor, int $project, int $after): array
     {
         $this->projects->view($actor, $project);
-        $rows = $this->store->all('SELECT id, code, revision, title, state, manifest_digest, baseline_id, artifact_id, updated_at
+        $rows = $this->store->all('SELECT id, code, revision, title, state, track, manifest_digest, baseline_id, artifact_id, updated_at
             FROM release_candidates WHERE tenant_id=? AND project_id=? AND id>? ORDER BY id LIMIT 51', [$actor->tenantId, $project, $after]);
         return ['items' => array_slice($rows, 0, 50), 'next_after' => count($rows) > 50 ? $rows[49]['id'] : null];
     }
@@ -160,7 +182,7 @@ final readonly class ReleaseCandidates
         $this->projects->view($actor, $project);
         $candidate = $this->row($actor, $project, $id);
         $candidate['quality'] = $this->quality($actor, $project, $candidate);
-        $candidate['approval_valid'] = $candidate['state'] === 'approved' && $candidate['quality']['ready']
+        $candidate['approval_valid'] = in_array($candidate['state'], ['approved', 'deployed', 'accepted'], true) && $candidate['quality']['ready']
             && $candidate['gate_digest'] === $candidate['quality']['digest'];
         $candidate['successor_id'] = $this->store->one('SELECT id FROM release_candidates WHERE tenant_id=? AND project_id=? AND previous_id=?',
             [$actor->tenantId, $project, $id])['id'] ?? null;
@@ -190,7 +212,7 @@ final readonly class ReleaseCandidates
     private function row(Actor $actor, int $project, int $id): array
     {
         $row = $this->store->one('SELECT id, code, revision, previous_id, title, baseline_id, artifact_id, test_plan_id, manifest,
-                manifest_digest, gate_digest, state, created_by, created_at, updated_at
+                manifest_digest, gate_digest, state, created_by, created_at, updated_at, track, production_environment_id, production_base_id
             FROM release_candidates WHERE tenant_id=? AND project_id=? AND id=?', [$actor->tenantId, $project, $id])
             ?? throw new Problem(404, 'candidate_not_found');
         $row['manifest'] = json_decode($row['manifest'], true, 32, JSON_THROW_ON_ERROR);
@@ -208,11 +230,13 @@ final readonly class ReleaseCandidates
         $checks = $this->plans->assess($actor, $project, $candidate['test_plan_id'], [
             'baseline_id' => $candidate['baseline_id'], 'artifact_id' => $candidate['artifact_id'], 'environment_id' => $manifest['test_environment_id'],
         ]);
-        $ready = $artifact['byte_length'] !== null && !$stale && $checks['ready'];
+        $currentBase = $candidate['track'] === 'release' || (new HotfixBase($this->store))->current(
+            $actor, $project, $candidate['production_environment_id'], $candidate['production_base_id']);
+        $ready = $artifact['byte_length'] !== null && $currentBase && !$stale && $checks['ready'];
         $resultIds = array_column($checks['cases'], 'result_id');
         $digest = $ready ? hash('sha256', self::encode([$candidate['manifest_digest'], $resultIds])) : null;
         return ['ready' => $ready, 'artifact_verified' => $artifact['byte_length'] !== null, 'stale_criteria' => $stale,
-            'counts' => $checks['counts'], 'result_ids' => $resultIds, 'digest' => $digest];
+            'production_base_current' => $currentBase, 'counts' => $checks['counts'], 'result_ids' => $resultIds, 'digest' => $digest];
     }
 
     private function requireReady(array $quality): array

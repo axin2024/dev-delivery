@@ -35,6 +35,14 @@ final class Http
                     $_SERVER['HTTP_X_DELIVERY_SIGNATURE'] ?? '', $this->rawJson()));
                 return;
             }
+            if (preg_match('~\A/api/connectors/deployments/([0-9a-f]{32})\z~', $path, $connector)) {
+                if ($method !== 'POST') {
+                    throw new Problem(405, 'method_not_allowed');
+                }
+                $this->respond(200, (new DeploymentHttp($store, $projects, $audit))->receive($connector[1],
+                    $_SERVER['HTTP_X_DELIVERY_TIMESTAMP'] ?? '', $_SERVER['HTTP_X_DELIVERY_SIGNATURE'] ?? '', $this->rawJson()));
+                return;
+            }
             $this->startSession();
             if ($method === 'GET' && $path === '/api/session') {
                 $actor = isset($_SESSION['account_id']) ? $this->actor($accounts)->view() : null;
@@ -64,6 +72,9 @@ final class Http
                     'POST' => [201, $accounts->create($actor, $input)->view()],
                     default => throw new Problem(405, 'method_not_allowed'),
                 };
+            } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/(deployments(?:/.*)?|environments/[1-9][0-9]{0,17}/deployment-connector)\z~', $path, $deployment)) {
+                [$status, $result] = (new DeploymentHttp($store, $projects, $audit))->dispatch(
+                    $method, $actor, (int) $deployment[1], $deployment[2], $input, $this->cursor(), $_GET);
             } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/(artifacts|environments|test-cases|test-plans|test-reports|test-results|defects|candidates)(/.*)?\z~', $path, $testing)) {
                 if ($junit) {
                     $input = $this->xmlUpload();

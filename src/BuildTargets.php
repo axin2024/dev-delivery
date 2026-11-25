@@ -112,7 +112,9 @@ final readonly class BuildTargets
                 s.commit_sha FROM build_artifacts a JOIN build_runs b ON b.id=a.build_id JOIN git_snapshots s ON s.id=b.snapshot_id
                 LEFT JOIN artifact_contents c ON (c.tenant_id,c.project_id,c.artifact_id)=(a.tenant_id,a.project_id,a.id)
                 WHERE a.tenant_id=? AND a.project_id=? AND a.id>? ORDER BY a.id LIMIT 51',
-            'environments' => 'SELECT id, code, name, stage FROM environments WHERE tenant_id=? AND project_id=? AND id>? ORDER BY id LIMIT 51',
+            'environments' => 'SELECT e.id, e.code, e.name, e.stage, h.deployment_id AS current_deployment_id FROM environments e
+                LEFT JOIN environment_heads h ON (h.tenant_id,h.project_id,h.environment_id)=(e.tenant_id,e.project_id,e.id)
+                WHERE e.tenant_id=? AND e.project_id=? AND e.id>? ORDER BY e.id LIMIT 51',
         };
         $rows = $this->store->all($query, [$actor->tenantId, $project, $after]);
         return ['items' => array_slice($rows, 0, 50), 'next_after' => count($rows) > 50 ? $rows[49]['id'] : null];
@@ -122,7 +124,7 @@ final readonly class BuildTargets
     {
         $this->projects->view($actor, $project);
         return $this->store->one('SELECT a.id, a.build_id, a.name, a.sha256, a.registered_by, a.registered_at,
-                b.provider_run_id, b.snapshot_id, s.repository_id, s.commit_sha, s.branch, c.byte_length
+                b.provider_run_id, b.snapshot_id, s.repository_id, s.commit_sha, s.branch, s.generation, c.byte_length
             FROM build_artifacts a JOIN build_runs b ON b.id=a.build_id JOIN git_snapshots s ON s.id=b.snapshot_id
             LEFT JOIN artifact_contents c ON (c.tenant_id,c.project_id,c.artifact_id)=(a.tenant_id,a.project_id,a.id)
             WHERE a.tenant_id=? AND a.project_id=? AND a.id=?', [$actor->tenantId, $project, $id])
@@ -132,7 +134,9 @@ final readonly class BuildTargets
     public function environment(Actor $actor, int $project, int $id): array
     {
         $this->projects->view($actor, $project);
-        return $this->store->one('SELECT id, code, name, stage FROM environments WHERE tenant_id=? AND project_id=? AND id=?',
+        return $this->store->one('SELECT e.id, e.code, e.name, e.stage, h.deployment_id AS current_deployment_id FROM environments e
+            LEFT JOIN environment_heads h ON (h.tenant_id,h.project_id,h.environment_id)=(e.tenant_id,e.project_id,e.id)
+            WHERE e.tenant_id=? AND e.project_id=? AND e.id=?',
             [$actor->tenantId, $project, $id]) ?? throw new Problem(404, 'environment_not_found');
     }
 }

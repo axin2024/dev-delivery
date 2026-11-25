@@ -91,7 +91,8 @@ function readArtifacts() {
 
 function readEnvironments() {
   return readPage('/environments', 'environments',
-    item => textNode('p', '环境 #' + item.id + ' · ' + item.name + ' · ' + environmentStages[item.stage]));
+    item => textNode('p', '环境 #' + item.id + ' · ' + item.name + ' · ' + environmentStages[item.stage]
+      + (item.current_deployment_id ? ' · 当前部署 #' + item.current_deployment_id : '')));
 }
 
 function readTestPlans() {

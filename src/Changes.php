@@ -73,6 +73,7 @@ final readonly class Changes
             }
             if ($decision === 'approved') {
                 $this->assertCurrentBaseline($actor, $project, $change['baseline_id']);
+                (new ProductionFence($this->store))->checkCriteria($actor, $project, array_column($change['criteria'], 'criterion_id'));
                 foreach ($change['criteria'] as $item) {
                     $revision = $this->baselines->appendReviewedRevision($actor, $project, $item);
                     $this->store->execute('UPDATE change_criteria SET approved_revision_id=?

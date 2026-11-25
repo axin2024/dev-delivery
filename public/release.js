@@ -8,13 +8,15 @@ function resetRelease() {
   selectedCandidate = null;
   for (const id of ['candidates', 'candidate-detail', 'candidate-approvals']) $(id).replaceChildren();
   for (const id of ['create-candidate', 'replace-candidate', 'approve-candidate', 'upload-artifact']) $(id).reset();
+  updateHotfixFields();
   for (const id of ['candidate-editor', 'candidate-replacement-editor', 'approve-candidate']) $(id).hidden = true;
 }
 
 function readCandidates() {
   $('candidate-editor').hidden = !canRegisterTargets();
   return readPage('/candidates', 'candidates', item => actionButton(
-    item.code + ' v' + item.revision + '　' + item.title + ' · ' + candidateStates[item.state], () => viewCandidate(item.id)));
+    item.code + ' v' + item.revision + '　' + item.title + ' · ' + (item.track === 'hotfix' ? '热修版' : '正式版')
+    + ' · ' + candidateStates[item.state], () => viewCandidate(item.id)));
 }
 
 async function viewCandidate(id) {
@@ -31,6 +33,11 @@ async function viewCandidate(id) {
     textNode('p', '范围清单 SHA-256 ' + candidate.manifest_digest),
     textNode('p', quality.artifact_verified ? '文件摘要已校验' : '待上传制品文件'),
     textNode('p', Object.entries(quality.counts).map(([state, count]) => outcomes[state] + ' ' + count).join(' · ')));
+  if (manifest.production_base) {
+    const base = manifest.production_base;
+    detail.append(textNode('p', '热修生产基点 #' + base.deployment_id + ' · ' + base.commit_sha + (quality.production_base_current ? '' : ' · 生产版本已变更')),
+      actionButton('查看热修生产基点', () => viewDeployment(base.deployment_id)));
+  }
   if (quality.stale_criteria.length) detail.append(textNode('p', '标准已有新版本 ' + quality.stale_criteria.map(row => '#' + row.criterion_id).join('、')));
   const frozen = document.createElement('details');
   frozen.append(textNode('summary', '核对冻结范围及必过用例'));
@@ -52,6 +59,9 @@ async function viewCandidate(id) {
       await call(projectPath('/candidates/') + id + '/' + action, 'POST', {manifest_digest: candidate.manifest_digest});
       await Promise.all([viewCandidate(id), readCandidates(), readTimeline()]);
     }));
+  }
+  if (canRegisterTargets() && !['draft', 'superseded'].includes(candidate.state)) {
+    detail.append(actionButton('使用候选申请部署', () => chooseDeploymentCandidate(candidate.id, manifest.artifact_sha256)));
   }
   $('approve-candidate').hidden = candidate.state !== 'pending_approval' || !quality.ready || quality.digest !== candidate.gate_digest
     || state.actor.account_id !== state.project.product_owner_id || state.actor.account_id === candidate.created_by;
@@ -76,8 +86,29 @@ function readCandidateApprovals(id) {
 }
 
 function candidateInput(fields) {
-  return {...fields, baseline_id: Number(fields.baseline_id), artifact_id: Number(fields.artifact_id), test_plan_id: Number(fields.test_plan_id)};
+  const {production_environment_id, production_base_id, ...input} = fields;
+  return {...input, baseline_id: Number(fields.baseline_id), artifact_id: Number(fields.artifact_id), test_plan_id: Number(fields.test_plan_id),
+    ...(fields.track === 'hotfix' ? {production_environment_id: Number(production_environment_id), production_base_id: Number(production_base_id)} : {})};
 }
+
+function updateHotfixFields() {
+  const fields = $('create-candidate').elements;
+  const hotfix = fields.track.value === 'hotfix';
+  $('candidate-hotfix-base').hidden = !hotfix;
+  for (const name of ['production_environment_id', 'production_base_id']) fields[name].required = hotfix;
+}
+
+function chooseHotfixBase(environment, deploymentId) {
+  const {elements} = $('create-candidate');
+  elements.track.value = 'hotfix';
+  elements.production_environment_id.value = environment;
+  elements.production_base_id.value = deploymentId;
+  updateHotfixFields();
+  $('candidate-editor').open = true;
+  elements.code.focus();
+}
+
+$('create-candidate').elements.track.addEventListener('change', updateHotfixFields);
 
 form('upload-artifact', async fields => {
   const body = fields.artifact_file;
@@ -92,6 +123,7 @@ form('upload-artifact', async fields => {
 form('create-candidate', async fields => {
   const candidate = await call(projectPath('/candidates'), 'POST', candidateInput(fields));
   $('create-candidate').reset();
+  updateHotfixFields();
   await Promise.all([viewCandidate(candidate.id), readCandidates(), readTimeline()]);
 });
 form('replace-candidate', async fields => {

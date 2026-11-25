@@ -15,7 +15,9 @@ const eventTitles = {
   defect_fixed: '提交修复', defect_closed: '复测关闭缺陷', artifact_content_verified: '校验制品文件',
   candidate_drafted: '拟定发布候选', candidate_frozen: '冻结候选范围', candidate_testing: '开始候选测试',
   candidate_submitted: '提交候选审批', candidate_approved: '批准发布候选',
-  candidate_approval_revoked: '撤销候选批准', candidate_superseded: '后继候选取代当前版本'
+  candidate_approval_revoked: '撤销候选批准', candidate_superseded: '后继候选取代当前版本', candidate_deployed: '候选已上线',
+  deployment_connector_created: '登记部署连接器', deployment_queued: '登记部署请求', deployment_unknown: '部署结果待核实',
+  deployment_running: '部署工具开始执行', deployment_succeeded: '确认部署成功', deployment_failed: '确认部署失败', deployment_cancelled: '确认取消部署'
 };
 const errors = {
   invalid_credentials: '租户、邮箱或密码有误。',
@@ -62,6 +64,17 @@ const errors = {
   candidate_gate_changed: '门禁证据有更新，请重新提交审批。',
   candidate_state_conflict: '候选已不在这个操作对应的状态，请重新打开。',
   candidate_targets_unchanged: '后继候选须选择新的基线、制品或测试计划。',
+  hotfix_production_base_changed: '选定的部署已不再是该生产环境的当前版本，请重新查单。',
+  hotfix_requires_branch_from_production: '请选择从当前生产提交创建、且没有强制改写历史的独立热修分支。',
+  hotfix_production_target_mismatch: '热修只能晋级到其生产基点所属的环境。',
+  environment_head_changed: '环境生效版本已变化，请查单并核对最新部署 ID。',
+  environment_has_active_deployment: '该环境已有部署请求，请先查单确认结果。',
+  deployment_candidate_approval_required: '生产部署要求本候选的审批当前有效。',
+  deployment_promotion_source_mismatch: '请核对前一级环境当前生效的部署及制品。',
+  deployment_receipt_target_mismatch: '请核对回执的部署号、环境、请求键和制品摘要。',
+  deployment_uses_test_plan: '此测试计划正用于执行中的生产部署，请先查单。',
+  deployment_uses_criteria: '变更涉及执行中生产部署使用的标准，请先查单。',
+  rollback_source_not_available: '找不到此部署可恢复的前一个生产版本。',
   csrf_invalid: '会话已过期，请刷新页面后登录。'
 };
 let busy = false;
@@ -194,7 +207,7 @@ async function readTimeline(append = false) {
   if (!append) $('timeline').replaceChildren();
   for (const row of data.items) {
     $('timeline').append(textNode('li',
-      row.occurred_at + ' UTC　' + (eventTitles[row.action] || row.action) + '　成员 ' + row.actor_id));
+      row.occurred_at + ' UTC　' + (eventTitles[row.action] || row.action) + '　' + (row.actor_id ? '成员 ' + row.actor_id : '部署连接器')));
   }
   state.eventsAfter = data.next_after;
   $('more-events').hidden = data.next_after === null;
@@ -370,7 +383,7 @@ function readChanges() {
 async function viewObjectTimeline(path, target, after = 0) {
   const data = await call(projectPath(path) + '?after=' + after);
   for (const row of data.items) {
-    target.append(textNode('li', row.occurred_at + ' UTC　' + (eventTitles[row.action] || row.action) + '　成员 #' + row.actor_id));
+    target.append(textNode('li', row.occurred_at + ' UTC　' + (eventTitles[row.action] || row.action) + '　' + (row.actor_id ? '成员 #' + row.actor_id : '部署连接器')));
   }
   if (data.next_after !== null) {
     const more = document.createElement('li');
@@ -600,6 +613,7 @@ function resetDeliveryViews() {
   for (const id of ['review-change', 'work-actions', 'import-editor', 'link-git']) $(id).hidden = true;
   resetTesting();
   resetRelease();
+  resetDeployments();
 }
 
 function criterionInput(fields) {
@@ -620,7 +634,7 @@ async function viewProject(id) {
   for (const id of ['planning', 'change-editor', 'sprint-editor', 'work-editor', 'repository-editor']) $(id).hidden = !editable;
   await Promise.all([
     ...(editable ? [readScope()] : []), readBaselines(), readTimeline(),
-    readChanges(), readSprints(), readWork(), readRepositories(), readTesting(), readCandidates()
+    readChanges(), readSprints(), readWork(), readRepositories(), readTesting(), readCandidates(), readDeployments()
   ]);
   $('project-detail').hidden = false;
 }

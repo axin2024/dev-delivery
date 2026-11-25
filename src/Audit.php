@@ -11,9 +11,14 @@ final readonly class Audit
 
     public function record(Actor $actor, string $type, int $id, string $action, array $details = []): void
     {
+        $this->recordFor($actor->tenantId, $actor->accountId, $type, $id, $action, $details);
+    }
+
+    public function recordFor(int $tenant, ?int $actor, string $type, int $id, string $action, array $details = []): void
+    {
         $this->store->execute(
             'INSERT INTO audit_events (tenant_id, actor_id, object_type, object_id, action, details) VALUES (?, ?, ?, ?, ?, ?)',
-            [$actor->tenantId, $actor->accountId, $type, $id, $action, json_encode((object) $details, JSON_THROW_ON_ERROR)]
+            [$tenant, $actor, $type, $id, $action, json_encode((object) $details, JSON_THROW_ON_ERROR)]
         );
     }
 

@@ -131,6 +131,18 @@ final readonly class Baselines
         });
     }
 
+    public function currentCriteria(Actor $actor, int $project, int $after): array
+    {
+        $this->projects->view($actor, $project);
+        $rows = $this->store->all('SELECT c.id, c.code, q.code AS requirement_code, r.title, r.version, r.id AS revision_id
+            FROM criteria c JOIN requirements q ON q.id=c.requirement_id
+            JOIN criterion_revisions r ON r.id=(SELECT cr.id FROM criterion_revisions cr
+                WHERE (cr.tenant_id,cr.project_id,cr.criterion_id)=(c.tenant_id,c.project_id,c.id)
+                ORDER BY cr.version DESC LIMIT 1)
+            WHERE c.tenant_id=? AND c.project_id=? AND c.id>? ORDER BY c.id LIMIT 51', [$actor->tenantId, $project, $after]);
+        return ['items' => array_slice($rows, 0, 50), 'next_after' => count($rows) > 50 ? $rows[49]['id'] : null];
+    }
+
     public function freeze(Actor $actor, int $project, array $input): array
     {
         $title = Input::string($input, 'title', 160);

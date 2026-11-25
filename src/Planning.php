@@ -50,33 +50,11 @@ final readonly class Planning
         });
     }
 
-    public function createCase(Actor $actor, int $project, array $input): array
-    {
-        $code = Input::slug($input, 'code');
-        $title = Input::string($input, 'title', 160);
-        $criterion = Input::integer($input, 'criterion_id', 1);
-        $revision = Input::integer($input, 'revision_id', 1);
-        $steps = Input::string($input, 'steps', 12_000);
-        $expected = Input::string($input, 'expected_result', 12_000);
-        return $this->write($actor, $project, 'test_case_code_exists', function () use ($actor, $project, $code, $title, $criterion, $revision, $steps, $expected): array {
-            $this->assertCurrentRevision($actor, $project, $criterion, $revision);
-            $id = $this->store->insert('INSERT INTO test_cases
-                (tenant_id, project_id, criterion_id, revision_id, code, title, steps, expected_result) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-                [$actor->tenantId, $project, $criterion, $revision, $code, $title, $steps, $expected]);
-            $details = ['project_id' => $project, 'revision_id' => $revision];
-            $this->audit->record($actor, 'test_case', $id, 'test_case_created', $details);
-            $this->audit->record($actor, 'project', $project, 'test_case_created', ['test_case_id' => $id, 'revision_id' => $revision]);
-            return ['id' => $id, 'criterion_id' => $criterion, 'revision_id' => $revision, 'code' => $code, 'title' => $title,
-                'steps' => $steps, 'expected_result' => $expected];
-        });
-    }
-
     public function listing(Actor $actor, int $project, int $after, string $entity): array
     {
         $this->projects->view($actor, $project);
         $query = match ($entity) {
             'work_items' => 'SELECT id, code, title, criterion_id, revision_id, team, owner_id, claimed_by, claimed_at, effort, sprint_id, review_change_id FROM work_items',
-            'test_cases' => 'SELECT id, code, title, criterion_id, revision_id, steps, expected_result, review_change_id FROM test_cases',
             'sprints' => 'SELECT id, code, title, team, starts_on, ends_on, capacity,
                 (SELECT COALESCE(SUM(w.effort),0) FROM work_items w WHERE (w.tenant_id,w.project_id,w.sprint_id)=(s.tenant_id,s.project_id,s.id)) AS used
                 FROM sprints s',

@@ -126,6 +126,25 @@ final readonly class Projects
         return $project;
     }
 
+    public function lockForTesting(Actor $actor, int $id, bool $caseDesign = false): array
+    {
+        $project = $this->project($actor, $id, true);
+        if (!$actor->has('tester')
+            && !($caseDesign && ($actor->has('admin') || $actor->accountId === $project['product_owner_id']))) {
+            throw new Problem(403, 'project_tester_required');
+        }
+        return $project;
+    }
+
+    public function lockForRelease(Actor $actor, int $id): array
+    {
+        $project = $this->project($actor, $id, true);
+        if (!$actor->has('release_manager')) {
+            throw new Problem(403, 'project_release_manager_required');
+        }
+        return $project;
+    }
+
     public function assertParticipant(Actor $actor, int $project, int $account): void
     {
         $this->view($this->accounts->find($actor->tenantId, $account), $project);

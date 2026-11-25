@@ -41,7 +41,8 @@ final class Http
                 $this->respond(200, ['csrf_token' => $_SESSION['csrf'], 'actor' => $actor]);
                 return;
             }
-            $input = $method === 'GET' ? [] : $this->mutation();
+            $upload = $method === 'POST' && preg_match('~\A/api/projects/[1-9][0-9]{0,17}/test-plans/[1-9][0-9]{0,17}/reports\z~', $path);
+            $input = $method === 'GET' || $upload ? [] : $this->mutation();
             if ($method === 'POST' && $path === '/api/login') {
                 $actor = $accounts->authenticate($input);
                 session_regenerate_id(true);
@@ -62,6 +63,9 @@ final class Http
                     'POST' => [201, $accounts->create($actor, $input)->view()],
                     default => throw new Problem(405, 'method_not_allowed'),
                 };
+            } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/(artifacts|environments|test-cases|test-plans|test-reports|test-results|defects)(/.*)?\z~', $path, $testing)) {
+                [$status, $result] = (new TestingHttp($store, $projects, $audit))->dispatch(
+                    $method, $actor, (int) $testing[1], $testing[2] . ($testing[3] ?? ''), $upload ? $this->xmlUpload() : $input, $this->cursor());
             } else {
                 $baselines = new Baselines($store, $projects, $audit);
                 $changes = new Changes($store, $projects, $baselines, $audit);
@@ -140,6 +144,7 @@ final class Http
             'GET /requirements' => [200, $baselines->requirements($actor, $project, $this->cursor())],
             'POST /requirements' => [201, $baselines->createRequirement($actor, $project, $body)],
             'GET /scope' => [200, $baselines->scope($actor, $project)],
+            'GET /criteria/current' => [200, $baselines->currentCriteria($actor, $project, $this->cursor())],
             'GET /baselines' => [200, $baselines->listing($actor, $project, $this->cursor())],
             'POST /baselines' => [201, $baselines->freeze($actor, $project, $body)],
             'GET /changes' => [200, $changes->listing($actor, $project, $this->cursor())],
@@ -148,8 +153,6 @@ final class Http
             'POST /sprints' => [201, $planning->createSprint($actor, $project, $body)],
             'GET /work-items' => [200, $planning->listing($actor, $project, $this->cursor(), 'work_items')],
             'POST /work-items' => [201, $planning->createWork($actor, $project, $body)],
-            'GET /test-cases' => [200, $planning->listing($actor, $project, $this->cursor(), 'test_cases')],
-            'POST /test-cases' => [201, $planning->createCase($actor, $project, $body)],
             'GET /repositories' => [200, $git->listing($actor, $project, $this->cursor())],
             'POST /repositories' => [201, $git->register($actor, $project, $body)],
             default => throw new Problem(404, 'route_not_found'),
@@ -168,9 +171,7 @@ final class Http
 
     private function mutation(): array
     {
-        if (!hash_equals($_SESSION['csrf'], $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '')) {
-            throw new Problem(403, 'csrf_invalid');
-        }
+        $this->assertCsrf();
         $body = $this->rawJson();
         try {
             if (!str_starts_with(ltrim($body), '{')) {
@@ -180,6 +181,34 @@ final class Http
         } catch (JsonException) {
             throw new Problem(400, 'invalid_json');
         }
+    }
+
+    private function assertCsrf(): void
+    {
+        if (!hash_equals($_SESSION['csrf'], $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '')) {
+            throw new Problem(403, 'csrf_invalid');
+        }
+    }
+
+    private function xmlUpload(): array
+    {
+        $this->assertCsrf();
+        $contentType = strtolower(trim(explode(';', $_SERVER['CONTENT_TYPE'] ?? '')[0]));
+        if (!in_array($contentType, ['application/xml', 'text/xml'], true)) {
+            throw new Problem(415, 'xml_required');
+        }
+        $xml = file_get_contents('php://input', false, null, 0, JUnit::MAX_BYTES + 1);
+        if ($xml === false || strlen($xml) > JUnit::MAX_BYTES) {
+            throw new Problem(413, 'payload_too_large');
+        }
+        return [
+            'xml' => $xml,
+            'source_key' => $_SERVER['HTTP_X_DELIVERY_REPORT_KEY'] ?? '',
+            'artifact_sha256' => $_SERVER['HTTP_X_DELIVERY_ARTIFACT_SHA256'] ?? '',
+            'attempt' => filter_var($_SERVER['HTTP_X_DELIVERY_ATTEMPT'] ?? '', FILTER_VALIDATE_INT),
+            'build_id' => filter_var($_SERVER['HTTP_X_DELIVERY_BUILD_ID'] ?? '', FILTER_VALIDATE_INT),
+            'environment_id' => filter_var($_SERVER['HTTP_X_DELIVERY_ENVIRONMENT_ID'] ?? '', FILTER_VALIDATE_INT),
+        ];
     }
 
     private function rawJson(): string
@@ -211,11 +240,17 @@ final class Http
         return $cursor;
     }
 
-    private function respond(int $status, array $body): void
+    private function respond(int $status, array|string $body): void
     {
         http_response_code($status);
-        header('Content-Type: application/json; charset=utf-8');
         header('Cache-Control: no-store');
+        if (is_string($body)) {
+            header('Content-Type: application/octet-stream');
+            header('Content-Disposition: attachment; filename="junit.xml"');
+            echo $body;
+            return;
+        }
+        header('Content-Type: application/json; charset=utf-8');
         echo json_encode($body, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
     }
 }

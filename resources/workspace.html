@@ -6,6 +6,7 @@
   <title>研发交付工作台</title>
   <link rel="stylesheet" href="/workspace.css">
   <script src="/workspace.js" defer></script>
+  <script src="/testing.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -207,19 +208,122 @@
             <div id="repository-events"></div>
           </section>
           <section class="panel">
-            <h2>关联测试用例</h2>
+            <h2>测试用例</h2>
             <div id="test-cases" class="item-list"></div>
             <details id="case-editor" hidden>
               <summary>登记验收用例</summary>
               <form id="create-case">
                 <label>验收标准<select name="criterion_id" required></select></label>
+                <button id="more-case-criteria" type="button" hidden>加载更多验收标准</button>
                 <label>用例编码<input name="code" required></label>
                 <label>用例名称<input name="title" required></label>
                 <label>执行步骤<textarea name="steps" required></textarea></label>
                 <label>预期结果<textarea name="expected_result" required></textarea></label>
+                <label>JUnit 类名<input name="junit_class" maxlength="240"></label>
+                <label>JUnit 用例名（默认用例编码）<input name="junit_name" maxlength="240"></label>
                 <button>登记用例</button>
               </form>
             </details>
+            <div id="test-case-detail"></div>
+            <form id="revise-case" hidden>
+              <label>名称<input name="title" required></label>
+              <label>执行步骤<textarea name="steps" required></textarea></label>
+              <label>预期结果<textarea name="expected_result" required></textarea></label>
+              <label>JUnit 类名<input name="junit_class" maxlength="240"></label>
+              <label>JUnit 用例名<input name="junit_name" required maxlength="240"></label>
+              <button>保存用例新版本</button>
+            </form>
+          </section>
+          <section class="panel">
+            <h2>构建制品与测试环境</h2>
+            <div id="artifacts" class="item-list"></div>
+            <div id="environments" class="item-list"></div>
+            <details id="test-target-editors" hidden>
+              <summary>登记制品或环境</summary>
+              <form id="register-artifact">
+                <label>构建 ID<input name="build_id" type="number" min="1" required></label>
+                <label>制品名称<input name="name" required></label>
+                <label>制品 SHA-256<input name="sha256" required minlength="64" maxlength="64" pattern="[0-9A-Fa-f]{64}"></label>
+                <button>登记制品</button>
+              </form>
+              <form id="register-environment">
+                <label>环境编码<input name="code" required></label>
+                <label>环境名称<input name="name" required></label>
+                <label>阶段<select name="stage">
+                  <option value="development">开发</option><option value="staging">预发</option><option value="production">生产</option>
+                </select></label>
+                <button>登记环境</button>
+              </form>
+            </details>
+          </section>
+          <section class="panel">
+            <h2>测试计划与执行证据</h2>
+            <details id="test-plan-editor" hidden>
+              <summary>创建测试计划</summary>
+              <form id="create-test-plan">
+                <label>计划编码<input name="code" required></label>
+                <label>计划名称<input name="name" required></label>
+                <label>基线 ID<input name="baseline_id" type="number" min="1" required></label>
+                <label>制品 ID<input name="artifact_id" type="number" min="1" required></label>
+                <label>测试环境 ID<input name="environment_id" type="number" min="1" required></label>
+                <label>必测用例版本 ID（逗号或空格分隔）<input name="case_version_ids" required></label>
+                <button>创建测试计划</button>
+              </form>
+            </details>
+            <div id="test-plans" class="item-list"></div>
+            <div id="test-plan-detail"></div>
+            <div id="test-execution-editors" hidden>
+              <details>
+                <summary>导入 JUnit XML</summary>
+                <form id="import-junit">
+                  <label>报告编号<input name="source_key" required></label>
+                  <label>执行序号<input name="attempt" type="number" min="1" required></label>
+                  <label>XML 文件<input name="report_file" type="file" accept=".xml,application/xml,text/xml"></label>
+                  <label>或粘贴报告内容<textarea name="xml" rows="6"></textarea></label>
+                  <button>导入 JUnit 报告</button>
+                </form>
+              </details>
+              <details>
+                <summary>登记人工测试结果</summary>
+                <form id="record-manual-test">
+                  <label>报告编号<input name="source_key" required></label>
+                  <label>执行序号<input name="attempt" type="number" min="1" required></label>
+                  <label>用例版本<select name="case_version_id" required></select></label>
+                  <label>结果<select name="outcome"><option value="passed">通过</option><option value="failed">失败</option><option value="skipped">跳过</option></select></label>
+                  <label>执行摘要<textarea name="summary" required></textarea></label>
+                  <button>登记人工结果</button>
+                </form>
+              </details>
+            </div>
+            <div id="test-reports" class="item-list"></div>
+            <div id="test-report-detail"></div>
+          </section>
+          <section class="panel">
+            <h2>缺陷与复测</h2>
+            <details id="defect-editor" hidden>
+              <summary>登记缺陷</summary>
+              <form id="open-defect">
+                <label>失败结果 ID<input name="failed_result_id" type="number" min="1" required></label>
+                <label>标题<input name="title" required></label>
+                <label>描述<textarea name="description" required></textarea></label>
+                <label>严重度<select name="severity">
+                  <option value="major">主要</option><option value="critical">阻断</option><option value="minor">轻微</option>
+                </select></label>
+                <button>登记缺陷</button>
+              </form>
+            </details>
+            <div id="defects" class="item-list"></div>
+            <div id="defect-detail"></div>
+            <form id="fix-defect" hidden>
+              <label>修复制品 ID<input name="artifact_id" type="number" min="1" required></label>
+              <label>修复说明<textarea name="note" required></textarea></label>
+              <button>提交修复</button>
+            </form>
+            <form id="close-defect" hidden>
+              <label>通过的复测结果 ID<input name="retest_result_id" type="number" min="1" required></label>
+              <label>复测结论<textarea name="note" required></textarea></label>
+              <button>确认复测并关闭</button>
+            </form>
           </section>
           <section class="panel">
             <h2>项目时间线</h2>

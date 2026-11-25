@@ -9,7 +9,10 @@ const eventTitles = {
   baseline_frozen: '冻结基线', change_proposed: '提交变更', change_approved: '批准变更', change_rejected: '驳回变更',
   sprint_created: '创建迭代', work_item_created: '创建任务', work_item_scheduled: '调整任务排期',
   dependency_saved: '保存依赖', dependency_removed: '移除依赖', test_case_created: '登记用例',
-  repository_registered: '登记代码仓库', work_item_claimed: '认领任务', git_snapshot_linked: '关联提交快照'
+  repository_registered: '登记代码仓库', work_item_claimed: '认领任务', git_snapshot_linked: '关联提交快照',
+  test_case_revised: '修订用例', test_plan_created: '创建测试计划', artifact_registered: '登记制品',
+  environment_registered: '登记环境', test_result_recorded: '记录测试结果', defect_opened: '登记缺陷',
+  defect_fixed: '提交修复', defect_closed: '复测关闭缺陷'
 };
 const errors = {
   invalid_credentials: '租户、邮箱或密码有误。',
@@ -34,6 +37,19 @@ const errors = {
   connector_event_content_conflict: '此事件编号已用于不同的回执内容。',
   git_reference_stale: '分支已经移动，请核对原提交与当前提交。',
   connector_snapshot_commit_mismatch: '回执里的提交与所指向的快照不一致。',
+  test_case_version_conflict: '用例已更新，请重新打开并核对当前版本。',
+  test_case_unchanged: '当前内容与已保存用例版本相同。',
+  test_case_outside_plan_baseline: '部分用例版本绑定的验收标准不在所选基线中。',
+  test_plan_duplicate_case: '同一个用例或 JUnit 标识只能出现一次。',
+  test_execution_target_mismatch: '请确认报告对应的构建、制品摘要和测试环境。',
+  test_report_content_conflict: '此报告编号已用于其他内容。',
+  test_attempt_already_recorded: '该执行序号已有报告。',
+  junit_no_mapped_cases: '报告里的类名和用例名没有匹配本计划的用例。',
+  junit_duplicate_mapped_case: '报告含两个同名结果，无法确定该用例的结果。',
+  junit_invalid_document: '请选择完整的 JUnit XML 报告。',
+  junit_unsupported_xml: '该 XML 使用了不支持的声明或嵌套。',
+  defect_retest_evidence_mismatch: '请选择修复制品在原环境中通过的对应用例结果。',
+  defect_fix_requires_new_build: '请选择新的构建和制品摘要。',
   csrf_invalid: '会话已过期，请刷新页面后登录。'
 };
 let busy = false;
@@ -45,6 +61,10 @@ async function call(path, method = 'GET', input) {
     options.headers['X-CSRF-Token'] = state.csrf;
     options.body = JSON.stringify(input || {});
   }
+  return requestJson(path, options);
+}
+
+async function requestJson(path, options) {
   const response = await fetch(path, options);
   const body = await response.json();
   if (body.csrf_token) state.csrf = body.csrf_token;
@@ -236,6 +256,7 @@ async function viewBaseline(id) {
   const baseline = await call(projectPath('/baselines/') + id);
   state.baseline = baseline;
   $('baseline-detail').replaceChildren(textNode('h3', 'B' + baseline.sequence + '　' + baseline.title),
+    textNode('p', '基线 ID #' + baseline.id),
     textNode('p', '章程 v' + baseline.charter_version + '　' + baseline.charter_snapshot.charter),
     textNode('code', baseline.manifest_digest),
     ...baseline.criteria.map(item => showCriterion(item, false)));
@@ -255,17 +276,16 @@ async function readScope() {
   for (const item of state.scope.criteria) requirements.set(item.requirement.id, item.requirement);
   $('requirement-options').replaceChildren();
   for (const item of requirements.values()) $('requirement-options').add(new Option(item.code + '　' + item.title, item.id));
-  for (const id of ['create-work', 'create-case']) {
-    const options = $(id).elements.criterion_id;
-    options.replaceChildren();
-    for (const item of state.scope.criteria) {
-      options.add(new Option(item.requirement.code + ' / ' + item.code + '　' + item.title + ' · v' + item.version, item.criterion_id));
-    }
+  const options = $('create-work').elements.criterion_id;
+  options.replaceChildren();
+  for (const item of state.scope.criteria) {
+    options.add(new Option(item.requirement.code + ' / ' + item.code + '　' + item.title + ' · v' + item.version, item.criterion_id));
   }
   const missing = state.scope.uncovered_requirements;
   $('scope').replaceChildren(...missing.map(item => textNode('p', item.code + '　待添加验收标准')),
     ...state.scope.criteria.map(item => showCriterion(item, true)));
   if (!missing.length && !state.scope.criteria.length) $('scope').append(textNode('p', '请先添加需求和验收标准。'));
+  await readCaseCriteria();
 }
 
 function resetProposal() {
@@ -537,7 +557,7 @@ async function viewSnapshot(repo, id) {
     textNode('code', snapshot.commit_sha), textNode('p', snapshot.message));
   if (!snapshot.build_runs.length) article.append(textNode('p', '等待构建回执'));
   for (const build of snapshot.build_runs) {
-    article.append(textNode('p', '构建 ' + build.provider_run_id + ' · ' + buildStatus[build.status]));
+    article.append(textNode('p', '构建 #' + build.id + ' · ' + build.provider_run_id + ' · ' + buildStatus[build.status]));
   }
   for (const merge of snapshot.merge_requests) {
     article.append(textNode('p', '合并请求 ' + merge.remote_id + ' · ' + mergeStatus[merge.state] + ' · ' + merge.title));
@@ -556,26 +576,17 @@ function readRepositoryEvents(id) {
   });
 }
 
-function readCases() {
-  return readPage('/test-cases', 'test-cases', item => {
-    const details = document.createElement('details');
-    details.append(textNode('summary', item.code + '　' + item.title + (item.review_change_id ? '　待重新确认' : '')),
-      textNode('p', '标准版本 ID ' + item.revision_id), textNode('p', item.steps), textNode('p', '预期 · ' + item.expected_result));
-    if (item.review_change_id) details.append(actionButton('查看相关变更', () => viewChange(item.review_change_id)));
-    return details;
-  });
-}
-
 function resetDeliveryViews() {
   state.baseline = state.change = state.work = state.sprint = state.repository = null;
   resetProposal();
-  for (const id of ['changes', 'change-detail', 'sprints', 'sprint-detail', 'work-items', 'work-detail', 'test-cases',
+  for (const id of ['changes', 'change-detail', 'sprints', 'sprint-detail', 'work-items', 'work-detail',
     'repositories', 'repository-detail', 'snapshot-detail', 'repository-events', 'git-links']) {
     $(id).replaceChildren();
   }
-  for (const id of ['create-sprint', 'create-work', 'create-case', 'review-change', 'schedule-work', 'save-dependency',
+  for (const id of ['create-sprint', 'create-work', 'review-change', 'schedule-work', 'save-dependency',
     'register-repository', 'import-git', 'link-git']) $(id).reset();
   for (const id of ['review-change', 'work-actions', 'import-editor', 'link-git']) $(id).hidden = true;
+  resetTesting();
 }
 
 function criterionInput(fields) {
@@ -593,10 +604,10 @@ async function viewProject(id) {
   $('edit-project').elements.charter.value = state.project.charter;
   $('baseline-detail').replaceChildren();
   const editable = canPlan();
-  for (const id of ['planning', 'change-editor', 'sprint-editor', 'work-editor', 'case-editor', 'repository-editor']) $(id).hidden = !editable;
+  for (const id of ['planning', 'change-editor', 'sprint-editor', 'work-editor', 'repository-editor']) $(id).hidden = !editable;
   await Promise.all([
     ...(editable ? [readScope()] : []), readBaselines(), readTimeline(),
-    readChanges(), readSprints(), readWork(), readCases(), readRepositories()
+    readChanges(), readSprints(), readWork(), readRepositories(), readTesting()
   ]);
   $('project-detail').hidden = false;
 }
@@ -711,11 +722,6 @@ form('create-work', async fields => {
   $('create-work').reset();
   await Promise.all([readWork(), viewWork(work.id), readTimeline()]);
 });
-form('create-case', async fields => {
-  await call(projectPath('/test-cases'), 'POST', criterionInput(fields));
-  $('create-case').reset();
-  await Promise.all([readCases(), readTimeline()]);
-});
 form('schedule-work', async fields => {
   const work = await call(workPath(state.work.id) + '/schedule', 'PUT', {sprint_id: fields.sprint_id ? Number(fields.sprint_id) : null});
   await Promise.all([readSprints(), viewWork(work.id), readTimeline(), ...(state.sprint ? [viewSprint(state.sprint.id)] : [])]);
@@ -761,7 +767,7 @@ $('logout').addEventListener('click', () => run(async () => {
   state.actor = null;
   await showSession();
 }));
-run(async () => {
+document.addEventListener('DOMContentLoaded', () => run(async () => {
   state.actor = (await call('/api/session')).actor;
   await showSession();
-});
+}), { once: true });

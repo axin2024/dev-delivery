@@ -82,6 +82,15 @@ final class Input
         return $value;
     }
 
+    public static function sha256(array $data, string $field): string
+    {
+        $digest = strtolower(self::string($data, $field, 64, 64));
+        if (!preg_match('/\A[0-9a-f]{64}\z/', $digest)) {
+            throw self::invalid($field);
+        }
+        return $digest;
+    }
+
     public static function password(array $data, bool $new = false): string
     {
         $value = $data['password'] ?? null;

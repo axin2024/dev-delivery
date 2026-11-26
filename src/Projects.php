@@ -119,6 +119,11 @@ final readonly class Projects
         return $project;
     }
 
+    public function lockForApproval(Actor $actor, int $id): array
+    {
+        return $this->project($actor, $id, true);
+    }
+
     public function lockForEngineering(Actor $actor, int $id): array
     {
         $project = $this->project($actor, $id, true);

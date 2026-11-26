@@ -8,6 +8,8 @@
 4. 在计划详情上传 JUnit XML、粘贴报告或录入人工结果。填写流水线执行号和递增的执行序号。计划详情按用例展示最新结果，并区分通过、失败、跳过和未执行。
 5. 打开失败结果创建缺陷。工程师提交修复后，在缺陷详情登记新构建的制品。测试人员在同一环境用新制品完成复测，再用复测结果 ID 关闭缺陷。修复登记人与复测关闭人须为不同账号。
 
+在同一测试计划内补测时，打开原报告，勾选失败、跳过或本次未记录的用例，再选择「用勾选用例导入复测」。在测试工具执行这些用例，把新的 XML 导入同一计划。报告编号与执行序号为本次运行的值，结果须和勾选用例一一对应。选集保留在当前浏览器标签页，拒绝时会显示计划外条目、多出的用例版本和缺少的用例版本。
+
 计划保留创建时选定的用例版本。修订需求或更换制品后，创建使用新目标的计划。关闭缺陷后，原始失败和复测结果仍可从缺陷详情追溯到各自的执行证据。
 
 ## 报告 API
@@ -17,9 +19,11 @@
 | 方法与路径 | 输入或用途 |
 | --- | --- |
 | `POST /test-plans/{id}/reports` | `application/xml` 或 `text/xml` 原始请求体，以及下表的执行标识 |
+| `POST /test-plans/{id}/report-retries` | JSON 字段 `source_key`、`attempt`、`build_id`、`environment_id`、`artifact_sha256`、`source_report_id`、`case_version_ids` 和保留原字节的 `xml_base64` |
 | `POST /test-plans/{id}/manual` | JSON 字段 `source_key`、`attempt`、`build_id`、`environment_id`、`artifact_sha256`、`case_version_id`、`outcome`、`summary`，可选 `duration_ms` |
 | `POST /test-plans/{id}/gate` | 传入 `baseline_id`、`artifact_id`、`environment_id`，检查指定计划的目标和各用例最新结果 |
 | `GET /test-plans/{id}/reports` | 分页列出执行证据 |
+| `GET /test-reports/{id}` | 读取结果、原报告 ID、未记录用例及有权查看的计划外条目 |
 | `GET /test-reports/{id}/xml` | 有原始报告访问权限的项目成员下载原始 XML |
 | `GET /test-cases/{id}/timeline`、`GET /defects/{id}/timeline` | 查看用例与缺陷的审计记录 |
 
@@ -31,7 +35,7 @@
 | `X-Delivery-Environment-Id` | 计划绑定的环境 ID |
 | `X-Delivery-Artifact-Sha256` | 计划绑定制品的 64 位小写十六进制摘要 |
 
-JUnit 用例通过 `classname` 和 `name` 匹配计划中的固定用例版本。每份报告最多 2 MiB、5,000 个用例。未知用例计入未匹配数量。报告需要至少匹配一个计划内用例，同一用例在一份报告中重复出现时整份拒收。
+JUnit 用例通过 `classname` 和 `name` 匹配计划中的固定用例版本。每份报告最多 2 MiB、5,000 个用例。未知用例在回执中保留序号和拒绝原因，至少匹配一个计划内用例才保存。同一用例在一份报告中重复出现时整份拒收。
 
 重试时保留相同的执行标识、序号、目标和报告原始字节。平台返回已保存的证据。相同执行标识带来不同内容、两个执行共用序号，或者构建、环境、制品摘要与计划不一致时返回 HTTP 409。
 
@@ -45,4 +49,4 @@ JUnit 用例通过 `classname` 和 `name` 匹配计划中的固定用例版本�
 python tests/testing_http.py http://127.0.0.1:8080 http://127.0.0.1:8081
 ```
 
-回归覆盖并发报告重试、目标不匹配、迟到报告、用例版本修订、原始 XML 回读及不同构建上的缺陷复测。
+回归覆盖并发报告重试、目标不匹配、迟到报告、逐项拒绝、选定用例复测、用例版本修订、原始 XML 回读及不同构建上的缺陷复测。

@@ -39,6 +39,7 @@ final readonly class TestingHttp
                 'POST test-plans/gate' => [200, $this->plans->assess($actor, $project, $id, $body)],
                 'GET test-plans/reports' => [200, $this->evidence->reports($actor, $project, $id, $after)],
                 'POST test-plans/reports' => [201, $this->evidence->import($actor, $project, $id, $body, $body['xml'])],
+                'POST test-plans/report-retries' => [201, $this->evidence->retry($actor, $project, $id, $body)],
                 'POST test-plans/manual' => [201, $this->evidence->manual($actor, $project, $id, $body)],
                 'GET test-reports' => [200, $this->evidence->report($actor, $project, $id)],
                 'GET test-reports/xml' => [200, $this->evidence->original($actor, $project, $id)],
@@ -54,6 +55,7 @@ final readonly class TestingHttp
                 'POST candidates/freeze', 'POST candidates/start-testing', 'POST candidates/submit' =>
                     [200, $this->candidates->advance($actor, $project, $id, substr($action, 1), $body)],
                 'POST candidates/approve' => [200, $this->candidates->approve($actor, $project, $id, $body)],
+                'PUT candidates/approval-delegation' => [200, $this->candidates->setApprovalDelegation($actor, $project, $id, $body)],
                 default => throw new Problem(404, 'route_not_found'),
             };
         }

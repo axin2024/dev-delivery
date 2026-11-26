@@ -1,6 +1,6 @@
 'use strict';
 
-const testing = {case: null, plan: null, defect: null, criteria: new Map(), criteriaAfter: null};
+const testing = {case: null, plan: null, defect: null, retry: null, criteria: new Map(), criteriaAfter: null};
 const outcomes = {passed: '通过', failed: '失败', skipped: '跳过', missing: '缺少执行记录'};
 const defectStates = {open: '待修复', fixed: '待复测', closed: '已关闭'};
 const environmentStages = {development: '开发', staging: '预发', production: '生产'};
@@ -123,6 +123,8 @@ async function viewTestPlan(id) {
   $('test-execution-editors').hidden = !canTest();
   $('test-report-detail').replaceChildren();
   for (const id of ['import-junit', 'record-manual-test']) $(id).reset();
+  setTestRetry(null);
+  $('test-report-rejections').replaceChildren();
   await readTestReports(id);
 }
 
@@ -137,6 +139,9 @@ async function viewTestReport(id) {
   target.replaceChildren(textNode('h3', '报告 #' + id + '　' + report.source_key),
     textNode('p', '执行序号 ' + report.attempt + ' · 匹配 ' + report.matched_count + ' · 计划外 ' + report.other_count),
     textNode('code', report.sha256));
+  if (report.retry_of_report_id) {
+    target.append(actionButton('查看原报告 #' + report.retry_of_report_id, () => viewTestReport(report.retry_of_report_id)));
+  }
   if (report.format === 'junit' && (canTest() || canRegisterTargets() || state.actor.roles.includes('admin'))) {
     const download = textNode('a', '下载原始 JUnit XML');
     download.href = projectPath('/test-reports/') + id + '/xml';
@@ -145,10 +150,27 @@ async function viewTestReport(id) {
     actions.append(download);
     target.append(actions);
   }
-  for (const result of report.results) {
+  const storageKey = 'delivery:test-retry:' + [state.actor.tenant_id, state.actor.account_id, state.project.id, id].join(':');
+  const selected = new Set((sessionStorage.getItem(storageKey) || '').split(',').filter(Boolean).map(Number));
+  const retryButton = actionButton('用勾选用例导入复测', async () => {
+    if (testing.plan?.id !== report.plan_id) {
+      await viewTestPlan(report.plan_id);
+      await viewTestReport(id);
+    }
+    setTestRetry({source: id, attempt: report.attempt, cases: [...selected]});
+    const editor = $('import-junit');
+    editor.closest('details').open = true;
+    editor.scrollIntoView({block: 'start'});
+    editor.elements.source_key.focus();
+  });
+  retryButton.disabled = !selected.size;
+  const cases = [...report.results, ...report.unreported_cases.map(item => ({...item, outcome: 'missing'}))];
+  for (const result of cases) {
     const row = document.createElement('article');
-    row.append(textNode('h3', result.title + ' · v' + result.version + '　' + outcomes[result.outcome]),
-      textNode('p', '结果 #' + result.id + (result.duration_ms === null ? '' : ' · ' + result.duration_ms + ' ms')));
+    row.append(textNode('h3', result.title + ' · v' + result.version + '　'
+      + (result.outcome === 'missing' ? '未出现在本次报告' : outcomes[result.outcome])),
+    textNode('p', '用例版本 #' + result.case_version_id + ' · ' + junitCaseName(result)));
+    if (result.id) row.append(textNode('p', '结果 #' + result.id + (result.duration_ms === null ? '' : ' · ' + result.duration_ms + ' ms')));
     if (result.summary) row.append(textNode('p', result.summary));
     if (result.outcome === 'failed' && canTest()) {
       row.append(actionButton('使用此失败结果登记缺陷', () => {
@@ -157,8 +179,59 @@ async function viewTestReport(id) {
         $('defect-editor').scrollIntoView({block: 'start'});
       }));
     }
+    if (canTest() && result.outcome !== 'passed') {
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = selected.has(result.case_version_id);
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) selected.add(result.case_version_id);
+        else selected.delete(result.case_version_id);
+        sessionStorage.setItem(storageKey, [...selected].join(','));
+        retryButton.disabled = !selected.size;
+      });
+      const label = textNode('label', '复测 ' + result.title);
+      label.prepend(checkbox);
+      row.append(label);
+    }
     target.append(row);
   }
+  if (report.unmatched_cases?.length) {
+    target.append(textNode('h3', '计划外用例'), junitRejectionRows(report.unmatched_cases));
+  }
+  if (canTest() && cases.some(result => result.outcome !== 'passed')) target.append(retryButton);
+}
+
+function junitCaseName(result) {
+  return [result.junit_class, result.junit_name].filter(Boolean).join(' / ');
+}
+
+function junitRejectionRows(rows) {
+  const list = document.createElement('ul');
+  for (const row of rows) {
+    list.append(textNode('li', '第 ' + row.row + ' 项 · ' + junitCaseName(row) + ' · 类名和用例名未匹配当前计划'));
+  }
+  return list;
+}
+
+function setTestRetry(retry) {
+  testing.retry = retry;
+  const editor = $('import-junit');
+  const context = $('test-retry-context');
+  context.hidden = $('cancel-test-retry').hidden = !retry;
+  editor.elements.attempt.min = retry ? retry.attempt + 1 : 1;
+  if (retry) {
+    editor.elements.attempt.value = retry.attempt + 1;
+    context.textContent = '复测原报告 #' + retry.source + ' · 用例版本 ' + retry.cases.join(', ');
+  }
+}
+
+function reportBase64(body) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('无法读取 XML 文件。'));
+    reader.onload = () => resolve(reader.result.split(',', 2)[1]);
+    reader.readAsDataURL(body instanceof Blob ? body : new Blob([body], {type: 'application/xml'}));
+  });
 }
 
 function readDefects() {
@@ -239,15 +312,32 @@ form('import-junit', async fields => {
   const plan = testing.plan;
   const body = fields.report_file.size ? fields.report_file : fields.xml;
   if (!body) throw new Error('请选取 XML 文件或粘贴报告内容。');
-  const report = await requestJson(projectPath('/test-plans/') + plan.id + '/reports', {method: 'POST', body, headers: {
-    'Content-Type': 'application/xml', 'X-CSRF-Token': state.csrf, 'X-Delivery-Report-Key': fields.source_key,
-    'X-Delivery-Attempt': fields.attempt, 'X-Delivery-Artifact-Sha256': plan.sha256,
-    'X-Delivery-Build-Id': plan.build_id, 'X-Delivery-Environment-Id': plan.environment_id
-  }});
+  const path = projectPath('/test-plans/') + plan.id;
+  const retry = testing.retry;
+  const rejected = $('test-report-rejections');
+  rejected.replaceChildren();
+  let report;
+  try {
+    report = retry ? await call(path + '/report-retries', 'POST', {
+      source_key: fields.source_key, attempt: Number(fields.attempt), artifact_sha256: plan.sha256, build_id: plan.build_id,
+      environment_id: plan.environment_id, source_report_id: retry.source, case_version_ids: retry.cases, xml_base64: await reportBase64(body)
+    }) : await requestJson(path + '/reports', {method: 'POST', body, headers: {
+      'Content-Type': 'application/xml', 'X-CSRF-Token': state.csrf, 'X-Delivery-Report-Key': fields.source_key,
+      'X-Delivery-Attempt': fields.attempt, 'X-Delivery-Artifact-Sha256': plan.sha256,
+      'X-Delivery-Build-Id': plan.build_id, 'X-Delivery-Environment-Id': plan.environment_id
+    }});
+  } catch (error) {
+    const detail = error.details || {};
+    if (detail.unmatched_rows?.length) rejected.append(junitRejectionRows(detail.unmatched_rows));
+    if (detail.missing_case_version_ids?.length) rejected.append(textNode('p', '报告缺少用例版本 ' + detail.missing_case_version_ids.join(', ')));
+    if (detail.extra_case_version_ids?.length) rejected.append(textNode('p', '报告另含用例版本 ' + detail.extra_case_version_ids.join(', ')));
+    throw error;
+  }
   await viewTestPlan(plan.id);
   await viewTestReport(report.id);
   showMessage('JUnit 报告已保存，匹配 ' + report.matched_count + ' 项。');
 });
+$('cancel-test-retry').addEventListener('click', () => setTestRetry(null));
 form('record-manual-test', async fields => {
   const plan = testing.plan;
   const report = await call(projectPath('/test-plans/') + plan.id + '/manual', 'POST', {...fields,

@@ -15,6 +15,7 @@ const eventTitles = {
   defect_fixed: '提交修复', defect_closed: '复测关闭缺陷', artifact_content_verified: '校验制品文件',
   candidate_drafted: '拟定发布候选', candidate_frozen: '冻结候选范围', candidate_testing: '开始候选测试',
   candidate_submitted: '提交候选审批', candidate_approved: '批准发布候选',
+  candidate_approval_delegated: '委托候选审批', candidate_approval_delegation_closed: '结束审批代办',
   candidate_approval_revoked: '撤销候选批准', candidate_superseded: '后继候选取代当前版本', candidate_deployed: '候选已上线',
   deployment_connector_created: '登记部署连接器', deployment_queued: '登记部署请求', deployment_unknown: '部署结果待核实',
   deployment_running: '部署工具开始执行', deployment_succeeded: '确认部署成功', deployment_failed: '确认部署失败', deployment_cancelled: '确认取消部署',
@@ -52,6 +53,9 @@ const errors = {
   test_execution_target_mismatch: '请确认报告对应的构建、制品摘要和测试环境。',
   test_report_content_conflict: '此报告编号已用于其他内容。',
   test_attempt_already_recorded: '该执行序号已有报告。',
+  test_retry_attempt_not_newer: '复测执行序号必须大于原报告的执行序号。',
+  test_retry_case_ineligible: '复测仅可选择原报告失败、跳过或未记录的计划内用例。',
+  test_retry_result_selection_mismatch: 'JUnit 报告必须准确包含所选复测用例。',
   junit_no_mapped_cases: '报告里的类名和用例名没有匹配本计划的用例。',
   junit_duplicate_mapped_case: '报告含两个同名结果，无法确定该用例的结果。',
   junit_invalid_document: '请选择完整的 JUnit XML 报告。',
@@ -65,6 +69,9 @@ const errors = {
   candidate_target_not_ready: '请核对制品文件和标准版本后再冻结或启动测试。',
   candidate_gate_blocked: '候选门禁尚未通过，请核对测试结果和标准版本。',
   candidate_gate_changed: '门禁证据有更新，请重新提交审批。',
+  candidate_delegate_ineligible: '请选择本项目另一名具备产品角色的成员。',
+  candidate_delegation_changed: '审批代办已有变更，请重新打开候选。',
+  candidate_delegated_approver_required: '只有当前受托人可代办此项审批。',
   candidate_state_conflict: '候选已不在这个操作对应的状态，请重新打开。',
   candidate_targets_unchanged: '后继候选须选择新的基线、制品或测试计划。',
   hotfix_production_base_changed: '选定的部署已不再是该生产环境的当前版本，请重新查单。',
@@ -119,7 +126,9 @@ async function requestJson(path, options) {
   if (!response.ok) {
     const detail = body.details || {};
     const conflict = conflictText(detail);
-    throw new Error([errors[body.error] || body.error || '请求失败', detail.field, ...conflict].filter(Boolean).join(' '));
+    const error = new Error([errors[body.error] || body.error || '请求失败', detail.field, ...conflict].filter(Boolean).join(' '));
+    error.details = detail;
+    throw error;
   }
   return body;
 }

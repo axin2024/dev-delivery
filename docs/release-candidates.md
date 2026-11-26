@@ -10,6 +10,12 @@
 
 一份候选固定使用一份预发计划。另一制品、构建或环境的结果只能用于对应计划。更高序号的报告若替换了当前必过结果，审批需要基于新证据重新提交。标准修订后，使用新基线创建后继候选。
 
+## 审批代办
+
+在候选待审批且门禁有效时，项目产品负责人可以选择已经加入项目的另一名产品成员，填写原因后保存代办。候选创建人和项目业务签收人不能成为受托人。留空成员可撤销当前代办。
+
+受托人用自己的账号核对证据并批准。委托仅覆盖该候选清单和门禁摘要。门禁证据变更后需重新提交并安排代办，候选替换也会结束旧委托。审批记录和交付报告保存实际审批人和委托人。
+
 ## 热修与正式版本并行
 
 打开生产环境当前成功部署，使用该部署建立热修候选。记录仓库中新热修分支的第一个快照，提交 SHA 使用生产部署的提交。推送修复后，连接器再记录热修提交和构建回执。候选保存生产部署、分支起点和修复制品的证据，拒收同分支构建、基点不符及审批范围内发生过强制更新的分支。
@@ -27,7 +33,8 @@
 | `POST /candidates` | JSON 字段 `code`、`title`、`baseline_id`、`artifact_id`、`test_plan_id`。热修加 `track=hotfix`、`production_environment_id`、`production_base_id` |
 | `GET /candidates/{id}` | 查看候选清单、门禁状态、审批是否有效及前后继关系 |
 | `POST /candidates/{id}/freeze`、`/start-testing`、`/submit` | JSON 字段 `manifest_digest` |
-| `POST /candidates/{id}/approve` | JSON 字段 `manifest_digest`、`gate_digest`、`note` |
+| `POST /candidates/{id}/approve` | JSON 字段 `manifest_digest`、`gate_digest`、`note`，受托审批须提交 `delegation_id` |
+| `PUT /candidates/{id}/approval-delegation` | JSON 字段 `manifest_digest`、`gate_digest`、`delegate_id`、`expected_delegation_id`、`reason`。未建委托时预期 ID 为 `null`，撤销时受托人 ID 为 `null` |
 | `POST /candidates/{id}/replacements` | JSON 字段 `title`、`baseline_id`、`artifact_id`、`test_plan_id`，沿用版本编码 |
 | `GET /candidates/{id}/approvals`、`/timeline` | 分页读取审批记录及状态变更 |
 
@@ -39,4 +46,4 @@
 python tests/release_candidates_http.py http://127.0.0.1:8080 http://127.0.0.1:8081
 ```
 
-测试需使用连接到同一个隔离 MySQL 测试库的两套 PHP 服务。场景包含实际 Git 提交、二进制摘要校验、错配的预发计划、其他构建通过、审批后结果变化和并发创建后继候选。
+测试需使用连接到同一个隔离 MySQL 测试库的两套 PHP 服务。场景包含实际 Git 提交、二进制摘要校验、错配的预发计划、其他构建通过、审批后结果变化、委托失效和并发创建后继候选。两套会话同时提交同一受托审批时只保存一次。

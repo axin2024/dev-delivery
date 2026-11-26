@@ -47,10 +47,20 @@ def run(origin, peer, after_review=None):
     release, release_id = member(admin, origin, tenant, password, "release_manager")
     release_peer = Session(peer)
     release_peer.login(tenant, "release_manager@example.test", password)
+
+    def additional_account(email, name, role):
+        account = admin.call("/api/accounts", "POST", dict(email=email, name=name, password=password, roles=[role]), 201)
+        client = Session(peer)
+        client.login(tenant, email, password)
+        return client, account["account_id"]
+
+    delegate, delegate_id = additional_account("approver@example.test", "Backup Product Reviewer", "product")
+    delegate_peer = Session(origin)
+    delegate_peer.login(tenant, "approver@example.test", password)
     project = owner.call("/api/projects", "POST", dict(code="ship", title="Dispatch", charter="Publish dispatch data",
                          product_owner_id=owner_id, business_signer_id=signer_id), 201)
     base = f"/api/projects/{project['id']}"
-    for account in (tester_id, release_id):
+    for account in (tester_id, release_id, delegate_id):
         owner.call(f"{base}/members/{account}", "PUT", {"enabled": True})
     req = owner.call(base + "/requirements", "POST", dict(code="export", title="Export", summary="Export dispatch data"), 201)
     versions = []
@@ -168,7 +178,41 @@ def run(origin, peer, after_review=None):
     pending = release.call(c2 + "/submit", "POST", m2)
     assert pending["state"] == "pending_approval" and pending["quality"]["result_ids"] != gate2["quality"]["result_ids"]
     assert owner.call(c2 + "/approve", "POST", dict(m2, gate_digest=gate2["gate_digest"], note="Wrong gate"), 409)["error"] == "candidate_gate_changed"
-    assert owner.call(c2 + "/approve", "POST", dict(m2, gate_digest=pending["gate_digest"], note="Replacement reviewed"))["approval_valid"]
+    delegate_url = c2 + "/approval-delegation"
+    grant = dict(m2, gate_digest=pending["gate_digest"], expected_delegation_id=None, delegate_id=delegate_id, reason="Authorized time off coverage")
+    assert delegate.call(delegate_url, "PUT", grant, 403)["error"] == "project_product_owner_required"
+    assert owner.call(delegate_url, "PUT", dict(grant, delegate_id=release_id), 422)["error"] == "candidate_delegate_ineligible"
+    assert owner.call(delegate_url, "PUT", dict(grant, delegate_id=signer_id), 422)["error"] == "candidate_delegate_ineligible"
+    first_grant = owner.call(delegate_url, "PUT", grant)["approval_delegation"]
+    delegate_approval = dict(m2, gate_digest=pending["gate_digest"], delegation_id=first_grant["id"], note="Replacement reviewed")
+    assert first_grant["delegated_by"] == owner_id and first_grant["delegated_to"] == delegate_id
+    assert release.call(c2 + "/approve", "POST", delegate_approval, 403)["error"] == "candidate_delegated_approver_required"
+    assert owner.call(delegate_url, "PUT", dict(grant, delegate_id=None), 409)["error"] == "candidate_delegation_changed"
+    revoked = owner.call(delegate_url, "PUT", dict(grant, expected_delegation_id=first_grant["id"], delegate_id=None))["approval_delegation"]
+    assert revoked["closed_reason"] == "revoked"
+    assert delegate.call(c2 + "/approve", "POST", delegate_approval, 409)["error"] == "candidate_delegation_changed"
+    expiring = owner.call(delegate_url, "PUT", dict(grant, expected_delegation_id=revoked["id"]))["approval_delegation"]
+    passed_report = junit(p2, 2, passing)
+    assert delegate.call(c2 + "/approve", "POST", dict(delegate_approval, delegation_id=expiring["id"]), 409)["error"] == "candidate_gate_changed"
+    pending = release.call(c2 + "/submit", "POST", m2)
+    assert pending["approval_delegation"]["closed_reason"] == "candidate_evidence_changed"
+    final_grant = owner.call(delegate_url, "PUT", dict(grant, expected_delegation_id=expiring["id"], gate_digest=pending["gate_digest"]))["approval_delegation"]
+    by_delegate = dict(delegate_approval, gate_digest=pending["gate_digest"], delegation_id=final_grant["id"])
+    owner.call(f"{base}/members/{delegate_id}", "PUT", {"enabled": False})
+    assert delegate.call(c2 + "/approve", "POST", by_delegate, 404)["error"] == "project_not_found"
+    owner.call(f"{base}/members/{delegate_id}", "PUT", {"enabled": True})
+
+    delegate_barrier = Barrier(2)
+    def approve_delegated(client):
+        delegate_barrier.wait(timeout=10)
+        return client.call(c2 + "/approve", "POST", by_delegate)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        reviews = list(pool.map(approve_delegated, [delegate, delegate_peer]))
+    assert all(review["approval_valid"] and review["approval_delegation"]["closed_reason"] == "approved" for review in reviews)
+    final_approvals = owner.call(c2 + "/approvals")["items"]
+    assert len(final_approvals) == 1 and final_approvals[0]["approved_by"] == delegate_id
+    assert final_approvals[0]["delegation_id"] == final_grant["id"] and final_approvals[0]["delegated_by"] == owner_id
     if after_review is not None:
         engineer, engineer_id = member(admin, origin, tenant, password, "engineer")
         owner.call(f"{base}/members/{engineer_id}", "PUT", {"enabled": True})
@@ -191,16 +235,11 @@ def run(origin, peer, after_review=None):
         reviewer, reviewer_id = member(admin, origin, tenant, password, "external_reviewer")
         other_tenant_reviewer, _ = member(outside, peer, "outside-" + token, password, "external_reviewer")
 
-        def additional_account(email, name, role):
-            account = admin.call("/api/accounts", "POST", dict(email=email, name=name, password=password, roles=[role]), 201)
-            client = Session(peer)
-            client.login(tenant, email, password)
-            return client, account["account_id"]
-
         other_reviewer, other_reviewer_id = additional_account("partner@example.test", "Partner", "external_reviewer")
         next_engineer, next_engineer_id = additional_account("backup@example.test", "Engineer Backup", "engineer")
         owner.call(f"{base}/members/{next_engineer_id}", "PUT", {"enabled": True})
         trace = dict(peer=second_signer, task_id=task["id"], engineer_id=engineer_id, defect_id=defect["id"],
+                     approval_delegate=delegate, approval_delegate_id=delegate_id, approval_grantor_id=owner_id,
                      failed_id=fail["id"], retest_id=retest["id"], commit_sha=second_commit, requirement_id=req["id"],
                      reviewer=reviewer, reviewer_id=reviewer_id, other_reviewer=other_reviewer, other_reviewer_id=other_reviewer_id,
                      external_other_tenant=other_tenant_reviewer, engineer=engineer, next_engineer=next_engineer, next_engineer_id=next_engineer_id)

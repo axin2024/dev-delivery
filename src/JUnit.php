@@ -8,6 +8,7 @@ use XMLReader;
 final class JUnit
 {
     public const MAX_BYTES = 2_097_152;
+    public const MAX_RETRY_JSON_BYTES = 2_820_000;
     public const MAX_CASES = 5000;
 
     public static function parse(string $xml): array
@@ -99,7 +100,8 @@ final class JUnit
             }
             $duration = (int) round((float) $time * 1000);
         }
-        return ['depth' => $reader->depth, 'result' => ['key' => self::key($class, $name), 'outcome' => 'passed',
+        return ['depth' => $reader->depth, 'result' => ['key' => self::key($class, $name), 'junit_class' => $class,
+            'junit_name' => $name, 'outcome' => 'passed',
             'duration_ms' => $duration, 'summary' => '']];
     }
 }

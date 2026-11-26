@@ -47,6 +47,8 @@ php -S 127.0.0.1:8080 -t public public/index.php
 - [里程碑、移交与外部交付包](docs/project-operations.md)
 - [自托管配置、升级与恢复](docs/self-hosting.md)
 - [验收结果和复跑命令](docs/release-validation.md)
+- [PRD 功能与验收索引](docs/prd-verification.md)
+- [版本记录](CHANGELOG.md)
 - [贡献指南](CONTRIBUTING.md) · [安全问题反馈](SECURITY.md) · [第三方声明](THIRD_PARTY_NOTICES.md)
 
 许可见 [Apache License 2.0](LICENSE)。

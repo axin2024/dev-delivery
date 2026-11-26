@@ -109,7 +109,8 @@ async function viewSignoffReport(id) {
   target.replaceChildren(textNode('h3', preview.archived ? '归档追溯矩阵' : '交付报告预览'),
     textNode('p', '构建 #' + matrix.candidate.manifest.build_id + ' · 提交 ' + matrix.candidate.manifest.commit_sha),
     textNode('p', '生产 → 预发 → 开发 · ' + matrix.deployment.map(leg => leg.environment_code + ' #' + leg.id).join(' → ')),
-    textNode('p', '审批 #' + matrix.approval.id + ' · ' + matrix.approval.approver_name),
+    textNode('p', '审批 #' + matrix.approval.id + ' · ' + matrix.approval.approver_name
+      + (matrix.approval.delegated_by_name ? ' · 受 ' + matrix.approval.delegated_by_name + ' 委托' : '')),
     textNode('code', preview.digest));
   if (signoff.current?.deployment_id === id && signoff.current.can_decide && !signoff.current.blocking_criterion_ids.length && !preview.archived) {
     target.append(textNode('p', '归档后可下载已冻结的证据。'), actionButton('归档交付报告', async () => {

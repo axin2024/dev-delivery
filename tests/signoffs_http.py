@@ -40,6 +40,9 @@ def verify_signoff(base, baseline, plan, previous, production, owner, signer, te
     assert current["content"]["candidate"]["manifest"]["commit_sha"] == fixture["commit_sha"]
     assert current["content"]["candidate"]["manifest"]["artifact_sha256"] == production["artifact_sha256"]
     assert current["content"]["approval"]["gate_digest"] == production["approved_gate_digest"]
+    assert current["content"]["approval"]["approved_by"] == fixture["approval_delegate_id"]
+    assert current["content"]["approval"]["delegated_by"] == fixture["approval_grantor_id"]
+    assert current["content"]["approval"]["delegation_id"] == fixture["approval_delegation_id"]
     assert [leg["stage"] for leg in current["content"]["deployment"]] == ["production", "staging", "development"]
     assert current["content"]["deployment"][0]["id"] == production["id"]
     assert all(leg["completion_event_id"] for leg in current["content"]["deployment"])

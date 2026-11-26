@@ -300,12 +300,15 @@
               <details>
                 <summary>导入 JUnit XML</summary>
                 <form id="import-junit">
+                  <p id="test-retry-context" hidden></p>
+                  <button id="cancel-test-retry" type="button" hidden>取消按项复测</button>
                   <label>报告编号<input name="source_key" required></label>
                   <label>执行序号<input name="attempt" type="number" min="1" required></label>
                   <label>XML 文件<input name="report_file" type="file" accept=".xml,application/xml,text/xml"></label>
                   <label>或粘贴报告内容<textarea name="xml" rows="6"></textarea></label>
                   <button>导入 JUnit 报告</button>
                 </form>
+                <div id="test-report-rejections" aria-live="polite"></div>
               </details>
               <details>
                 <summary>登记人工测试结果</summary>
@@ -373,6 +376,14 @@
               <label>审批说明<textarea name="note" maxlength="4000" required></textarea></label>
               <button>批准此候选</button>
             </form>
+            <details id="candidate-delegation-editor" hidden>
+              <summary>审批代办</summary>
+              <form id="delegate-candidate">
+                <label>项目产品成员 ID（留空撤销）<input name="delegate_id" type="number" min="1"></label>
+                <label>委托或撤销原因<textarea name="reason" maxlength="1000" required></textarea></label>
+                <button>保存审批代办</button>
+              </form>
+            </details>
             <details id="candidate-replacement-editor" hidden>
               <summary>建立后继候选</summary>
               <form id="replace-candidate">

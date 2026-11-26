@@ -110,7 +110,15 @@ def exercise(base, baseline, plans, dev, staging, release, peer, owner, business
             stage_request = release.call(endpoint, "POST", request_data(staging, selected, dev_request["id"]), 201)
             finish_offline(stage_request, root)
             pending = release.call(address + "/submit", "POST", proof)
-            owner.call(address + "/approve", "POST", dict(proof, gate_digest=pending["gate_digest"], note="Reviewed for production"))
+            approval = dict(proof, gate_digest=pending["gate_digest"], note="Reviewed for production")
+            if number == 1:
+                owner.call(address + "/approve", "POST", approval)
+            else:
+                grant = dict(proof, gate_digest=pending["gate_digest"], expected_delegation_id=None,
+                             delegate_id=trace["approval_delegate_id"], reason="Production review coverage")
+                delegation = owner.call(address + "/approval-delegation", "PUT", grant)["approval_delegation"]
+                trace["approval_delegation_id"] = delegation["id"]
+                trace["approval_delegate"].call(address + "/approve", "POST", dict(approval, delegation_id=delegation["id"]))
             assert release.call(endpoint, "POST", request_data(prod, selected, dev_request["id"]), 409)["error"] == "deployment_promotion_source_mismatch"
             payload = request_data(prod, selected, stage_request["id"])
             barrier = Barrier(2)

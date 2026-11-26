@@ -7,9 +7,9 @@ const candidateStates = {draft: '草稿', frozen: '范围已冻结', testing: '�
 function resetRelease() {
   selectedCandidate = null;
   for (const id of ['candidates', 'candidate-detail', 'candidate-approvals']) $(id).replaceChildren();
-  for (const id of ['create-candidate', 'replace-candidate', 'approve-candidate', 'upload-artifact']) $(id).reset();
+  for (const id of ['create-candidate', 'replace-candidate', 'approve-candidate', 'delegate-candidate', 'upload-artifact']) $(id).reset();
   updateHotfixFields();
-  for (const id of ['candidate-editor', 'candidate-replacement-editor', 'approve-candidate']) $(id).hidden = true;
+  for (const id of ['candidate-editor', 'candidate-replacement-editor', 'approve-candidate', 'candidate-delegation-editor']) $(id).hidden = true;
 }
 
 function readCandidates() {
@@ -23,7 +23,7 @@ async function viewCandidate(id) {
   const candidate = await call(projectPath('/candidates/') + id);
   const oldSelection = selectedCandidate;
   selectedCandidate = candidate;
-  const {manifest, quality} = candidate;
+  const {manifest, quality, approval_delegation: delegation} = candidate;
   const detail = $('candidate-detail');
   detail.replaceChildren(textNode('h3', '候选 #' + id + '　' + candidate.title),
     textNode('p', candidateStates[candidate.state] + (candidate.approval_valid ? ' · 当前审批有效' : '')),
@@ -39,6 +39,12 @@ async function viewCandidate(id) {
       actionButton('查看热修生产基点', () => viewDeployment(base.deployment_id)));
   }
   if (quality.stale_criteria.length) detail.append(textNode('p', '标准已有新版本 ' + quality.stale_criteria.map(row => '#' + row.criterion_id).join('、')));
+  if (delegation) {
+    const delegationStates = {revoked: '已撤销', approved: '已代办批准', approved_directly: '负责人已直接批准', replaced: '已换人',
+      candidate_evidence_changed: '门禁已变更', candidate_replaced: '候选已被替换'};
+    detail.append(textNode('p', delegation.delegated_by_name + ' 委托 ' + delegation.delegated_to_name + ' · '
+      + (delegationStates[delegation.closed_reason] ?? '待代办') + ' · ' + delegation.reason));
+  }
   const frozen = document.createElement('details');
   frozen.append(textNode('summary', '核对冻结范围及必过用例'));
   for (const criterion of manifest.scope) {
@@ -63,13 +69,19 @@ async function viewCandidate(id) {
   if (canRegisterTargets() && !['draft', 'superseded'].includes(candidate.state)) {
     detail.append(actionButton('使用候选申请部署', () => chooseDeploymentCandidate(candidate.id, manifest.artifact_sha256)));
   }
+  const canApproveAsDelegate = delegation && !delegation.closed_at && delegation.delegated_to === state.actor.account_id
+    && delegation.gate_digest === candidate.gate_digest;
   $('approve-candidate').hidden = candidate.state !== 'pending_approval' || !quality.ready || quality.digest !== candidate.gate_digest
-    || state.actor.account_id !== state.project.product_owner_id || state.actor.account_id === candidate.created_by;
+    || (!candidate.can_delegate_approval && !canApproveAsDelegate);
+  const delegateEditor = $('candidate-delegation-editor');
+  delegateEditor.hidden = !candidate.can_delegate_approval;
   const replacement = $('candidate-replacement-editor');
   replacement.hidden = !canRegisterTargets() || !phases[candidate.state];
   if (oldSelection?.id !== id) {
     $('candidate-approvals').replaceChildren();
     $('approve-candidate').reset();
+    $('delegate-candidate').reset();
+    delegateEditor.open = false;
     replacement.open = false;
     const form = $('replace-candidate');
     for (const key of ['title', 'baseline_id', 'artifact_id', 'test_plan_id']) form.elements[key].value = candidate[key];
@@ -81,6 +93,7 @@ function readCandidateApprovals(id) {
     const details = document.createElement('details');
     details.append(textNode('summary', (row.revoked_at ? '已撤销' : '批准记录') + ' · 成员 #' + row.approved_by + ' · ' + row.approved_at + ' UTC'),
       textNode('p', row.note), textNode('p', '结果 ' + row.result_ids.map(id => '#' + id).join('、')), textNode('code', row.gate_digest));
+    if (row.delegation_id) details.append(textNode('p', '代办 #' + row.delegation_id + ' · 委托人 #' + row.delegated_by));
     return details;
   });
 }
@@ -132,8 +145,20 @@ form('replace-candidate', async fields => {
 });
 form('approve-candidate', async fields => {
   const item = selectedCandidate;
+  const delegation = item.approval_delegation;
   await call(projectPath('/candidates/') + item.id + '/approve', 'POST', {...fields,
-    manifest_digest: item.manifest_digest, gate_digest: item.gate_digest});
+    manifest_digest: item.manifest_digest, gate_digest: item.gate_digest,
+    ...(delegation?.delegated_to === state.actor.account_id ? {delegation_id: delegation.id} : {})});
   $('approve-candidate').reset();
   await Promise.all([viewCandidate(item.id), readCandidates(), readCandidateApprovals(item.id), readTimeline()]);
+});
+form('delegate-candidate', async fields => {
+  const item = selectedCandidate;
+  await call(projectPath('/candidates/') + item.id + '/approval-delegation', 'PUT', {
+    delegate_id: fields.delegate_id ? Number(fields.delegate_id) : null, expected_delegation_id: item.approval_delegation?.id ?? null,
+    manifest_digest: item.manifest_digest, gate_digest: item.gate_digest, reason: fields.reason
+  });
+  $('delegate-candidate').reset();
+  await Promise.all([viewCandidate(item.id), readTimeline()]);
+  showMessage('审批代办记录已更新。');
 });

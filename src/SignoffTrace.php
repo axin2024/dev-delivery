@@ -16,13 +16,20 @@ final readonly class SignoffTrace
         if (hash('sha256', $target['manifest']) !== $target['manifest_digest']) {
             throw new Problem(409, 'signoff_evidence_mismatch');
         }
-        $approval = $this->store->one('SELECT a.id, a.gate_digest, a.result_ids, a.approved_by, u.name AS approver_name, a.note, a.approved_at
+        $approval = $this->store->one('SELECT a.id, a.gate_digest, a.result_ids, a.approved_by, u.name AS approver_name, a.note, a.approved_at,
+                d.id AS delegation_id, d.delegated_by, grantor.name AS delegated_by_name
             FROM candidate_approvals a JOIN accounts u ON (u.tenant_id,u.id)=(a.tenant_id,a.approved_by)
+            LEFT JOIN candidate_approval_delegations d
+                ON (d.tenant_id,d.project_id,d.candidate_id,d.approval_id)=(a.tenant_id,a.project_id,a.candidate_id,a.id)
+            LEFT JOIN accounts grantor ON (grantor.tenant_id,grantor.id)=(d.tenant_id,d.delegated_by)
             WHERE a.tenant_id=? AND a.project_id=? AND a.candidate_id=? AND a.gate_digest=? AND a.approved_at<=?
                 AND (a.revoked_at IS NULL OR a.revoked_at>?) ORDER BY a.id DESC LIMIT 1',
             [...$identity, $target['candidate_id'], $target['approved_gate_digest'], $target['created_at'], $target['created_at']])
             ?? throw new Problem(409, 'signoff_evidence_mismatch');
         $approval['result_ids'] = json_decode($approval['result_ids'], true, 32, JSON_THROW_ON_ERROR);
+        if ($approval['delegation_id'] === null) {
+            unset($approval['delegation_id'], $approval['delegated_by'], $approval['delegated_by_name']);
+        }
         $gateProof = self::encode([$target['manifest_digest'], $approval['result_ids']]);
         $scope = array_map(static fn(array $item): array => ['criterion_id' => $item['criterion_id'], 'revision_id' => $item['revision_id']], $criteria);
         if (hash('sha256', $gateProof) !== $approval['gate_digest'] || $manifest['artifact_id'] !== $target['artifact_id']

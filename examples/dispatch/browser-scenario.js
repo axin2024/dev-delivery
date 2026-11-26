@@ -20,9 +20,9 @@ async (page) => {
     await idle();
     await button('登录').click();
     await page.locator('#accounts summary').click();
-    for (const [role, name] of [['product', '产品负责人'], ['business', '业务代表'], ['engineer', '后端工程师'],
+    for (const [role, name, login = role] of [['product', '产品负责人'], ['product', '备用产品', 'delegate'], ['business', '业务代表'], ['engineer', '后端工程师'],
         ['tester', '测试负责人'], ['release_manager', '发布经理'], ['external_reviewer', '合作方验收']]) {
-        await set('#create-account', {name, email: role + '@example.test', password: 'Local-Only-Demo-517'});
+        await set('#create-account', {name, email: login + '@example.test', password: 'Local-Only-Demo-517'});
         await field('#create-account', 'role').selectOption(role);
         await page.locator('#create-account button').click();
         await wait('#account-list', name);
@@ -38,7 +38,7 @@ async (page) => {
     await page.getByRole('heading', {name: '调度报表改造', exact: true}).waitFor();
     await idle();
     await page.getByText('章程与成员', {exact: true}).click();
-    for (const name of ['后端工程师', '测试负责人', '发布经理']) {
+    for (const name of ['后端工程师', '测试负责人', '发布经理', '备用产品']) {
         await set('#project-member', {member_id: account(name)});
         await button('保存成员').click();
         await wait('#message', '项目成员已更新');
@@ -222,21 +222,40 @@ async (page) => {
         await idle();
         return (await page.locator('#test-plan-detail').getByRole('heading', {name: /^计划 #/}).textContent()).split('#')[1].split('　')[0];
     };
-    const junit = async (name, result) => {
+    const junit = async (name, result, extra = '') => {
         const summary = page.getByText('导入 JUnit XML', {exact: true});
         if (!await summary.evaluate(node => node.parentElement.open)) await summary.click();
-        await set('#import-junit', {source_key: name, attempt: '1', xml: '<testsuite><testcase name="headers">' + result + '</testcase></testsuite>'});
+        await set('#import-junit', {source_key: name, attempt: '1', xml: '<testsuite><testcase name="headers">' + result + '</testcase>' + extra + '</testsuite>'});
         await button('导入 JUnit 报告').click();
         await wait('#test-report-detail', name);
         await idle();
     };
     await createPlan('初版回归', 'initial-qa', artifacts[0], baselineId, caseVersion);
-    await junit('initial-failed', '<failure message="原始列头失败"/>');
+    const outsideCase = '<testcase classname="Fixture.Extra" name="outside_plan"/>';
+    await junit('initial-failed', '<failure message="原始列头失败"/>', outsideCase);
     await wait('#test-report-detail', '原始列头失败');
+    await wait('#test-report-detail', 'Fixture.Extra / outside_plan');
     await button('使用此失败结果登记缺陷').click();
     await set('#open-defect', {title: '列头缺失', description: 'Excel 导出需要完整表头'});
     await page.locator('#open-defect button').click();
     await wait('#defect-detail', '待修复');
+    await idle();
+    const retryCheck = page.locator('#test-report-detail').getByRole('checkbox', {name: '复测 列头用例'});
+    await retryCheck.check();
+    await page.locator('#test-reports').getByRole('button', {name: /initial-failed/}).click();
+    await idle();
+    if (!await retryCheck.isChecked()) throw new Error('重新打开报告后未保留复测选择');
+    await button('用勾选用例导入复测').click();
+    await wait('#test-retry-context', '用例版本 ' + caseVersion);
+    await set('#import-junit', {source_key: 'initial-selected-retry', xml: '<testsuite>' + outsideCase + '</testsuite>'});
+    await button('导入 JUnit 报告').click();
+    await wait('#test-report-rejections', 'Fixture.Extra / outside_plan');
+    await wait('#test-report-rejections', '报告缺少用例版本 ' + caseVersion);
+    await set('#import-junit', {xml: '<testsuite><testcase name="headers"><failure message="复测仍缺少列头"/></testcase></testsuite>'});
+    await button('导入 JUnit 报告').click();
+    await wait('#test-report-detail', 'initial-selected-retry');
+    await button((await page.locator('#test-report-detail').getByRole('button', {name: /^查看原报告 #/}).textContent())).click();
+    await wait('#test-report-detail', '原始列头失败');
     await idle();
 
     await openAs('engineer');
@@ -326,11 +345,20 @@ async (page) => {
     await idle();
     await openAs('product');
     await page.locator('#candidates').getByRole('button', {name: /调度报表生产签收/}).click();
+    await page.locator('#candidate-delegation-editor summary').click();
+    await set('#delegate-candidate', {delegate_id: account('备用产品'), reason: '负责人轮休审批交接'});
+    await button('保存审批代办').click();
+    await wait('#message', '审批代办记录已更新');
+    await idle();
+    await openAs('delegate');
+    await page.locator('#candidates').getByRole('button', {name: /调度报表生产签收/}).click();
     await set('#approve-candidate', {note: '批准生产签收演练'});
     await button('批准此候选').click();
     await wait('#candidate-detail', '当前审批有效');
     await idle();
 
+    await openAs('product');
+    await page.locator('#candidates').getByRole('button', {name: /调度报表生产签收/}).click();
     const productionCandidate = (await page.locator('#candidate-detail h3').textContent()).match(/#(\d+)/)[1];
     await page.locator('#milestone-editor summary').click();
     await set('#create-milestone', {code: 'acceptance', title: '报表交付里程碑', baseline_id: fixedBaseline, candidate_id: productionCandidate,
@@ -369,6 +397,7 @@ async (page) => {
     await button('查看追溯矩阵').click();
     await wait('#signoff-report', '生产 → 预发 → 开发');
     await wait('#signoff-report', '与复测');
+    await wait('#signoff-report', '备用产品 · 受 产品负责人 委托');
     await button('填写业务结论').click();
     await field('#signoff-decision', 'decision').selectOption('blocked');
     await set('#signoff-decision', {note: '业务名称待统一'});

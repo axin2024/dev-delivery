@@ -51,7 +51,9 @@ final class Http
             }
             $junit = $method === 'POST' && preg_match('~\A/api/projects/[1-9][0-9]{0,17}/test-plans/[1-9][0-9]{0,17}/reports\z~', $path);
             $artifactContent = preg_match('~\A/api/projects/[1-9][0-9]{0,17}/artifacts/[1-9][0-9]{0,17}/content\z~', $path);
-            $input = $method === 'GET' || $junit || ($method === 'PUT' && $artifactContent) ? [] : $this->mutation();
+            $retry = $method === 'POST' && preg_match('~\A/api/projects/[1-9][0-9]{0,17}/test-plans/[1-9][0-9]{0,17}/report-retries\z~', $path);
+            $input = $method === 'GET' || $junit || ($method === 'PUT' && $artifactContent) ? []
+                : $this->mutation($retry ? JUnit::MAX_RETRY_JSON_BYTES : 65_536);
             if ($method === 'POST' && $path === '/api/login') {
                 $actor = $accounts->authenticate($input);
                 session_regenerate_id(true);
@@ -196,10 +198,10 @@ final class Http
         $_SESSION['csrf'] ??= bin2hex(random_bytes(32));
     }
 
-    private function mutation(): array
+    private function mutation(int $limit): array
     {
         $this->assertCsrf();
-        $body = $this->rawJson();
+        $body = $this->rawJson($limit);
         try {
             if (!str_starts_with(ltrim($body), '{')) {
                 throw new Problem(400, 'json_object_required');
@@ -230,9 +232,9 @@ final class Http
         ];
     }
 
-    private function rawJson(): string
+    private function rawJson(int $limit = 65_536): string
     {
-        return $this->readPayload(['application/json'], 'json_required', 65_536);
+        return $this->readPayload(['application/json'], 'json_required', $limit);
     }
 
     private function readPayload(array $contentTypes, string $error, int $max): string

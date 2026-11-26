@@ -1,6 +1,7 @@
 """Exercise immutable test evidence, JUnit import, and independent defect retests."""
 
 from concurrent.futures import ThreadPoolExecutor
+import base64
 import hashlib
 import json
 import os
@@ -124,6 +125,9 @@ def run(origin, peer):
     with ThreadPoolExecutor(max_workers=2) as pool:
         receipt, replay = list(pool.map(report, [tester, tester_peer]))
     assert receipt == replay and receipt["matched_count"] == 2 and receipt["other_count"] == 1
+    assert receipt["unmatched_cases"] == [dict(row=3, junit_class="Other", junit_name="unrelated",
+                                               outcome="passed", reason="case_outside_plan")]
+    assert receipt["unreported_cases"] == []
     assert len(tester.call(p1url + "/reports")["items"]) == 1
     assert upload(tester, p1url + "/reports", p1, 1, "initial-report", passed, 409)["error"] == "test_report_content_conflict"
     assert upload(tester, p1url + "/reports", p1, 1, "same-attempt", passed, 409)["error"] == "test_attempt_already_recorded"
@@ -134,6 +138,7 @@ def run(origin, peer):
     with tester.client.open(origin + initial + "/xml") as raw:
         assert raw.read() == failed and raw.headers["Content-Type"] == "application/octet-stream"
     assert business.call(initial + "/xml", status=403)["error"] == "raw_report_access_required"
+    assert "unmatched_cases" not in business.call(initial)
     assert outside.call(initial, status=404)["error"] == "project_not_found"
     defect = tester.call(base + "/defects", "POST", dict(failed_result_id=fail_id, severity="major",
                          title="Missing date", description="Invoice output has no date"), 201)
@@ -185,7 +190,44 @@ def run(origin, peer):
     actions = [row["action"] for row in tester.call(case_url + "/timeline")["items"]]
     assert actions.count("test_result_recorded") == 5 and "defect_closed" in actions
     assert [row["action"] for row in tester.call(bug + "/timeline")["items"]] == ["defect_opened", "defect_fixed", "defect_closed"]
+    partial = plan("partial-retry", b2, h2, qa, [case2["case_version_id"], other2["case_version_id"]])
+    partial_url = f"{base}/test-plans/{partial['id']}"
+    date_only = b'<testsuite><testcase classname="Reports.Export" name="date_column"/></testsuite>'
+    header_only = b'<testsuite><testcase classname="Reports.Export" name="header"/></testsuite>'
+    outside_only = b'<testsuite><testcase classname="Other" name="unrelated"/></testsuite>'
+    rejected = upload(tester, partial_url + "/reports", partial, 1, "rejected", outside_only, 422)
+    assert rejected == {"error": "junit_no_mapped_cases",
+                        "details": {"unmatched_rows": [dict(row=1, junit_class="Other", junit_name="unrelated")]}}
+    initial_partial = upload(tester, partial_url + "/reports", partial, 1, "partial", date_only)
+    header_version = other2["case_version_id"]
+    assert [row["case_version_id"] for row in initial_partial["unreported_cases"]] == [header_version]
+    retry_url = partial_url + "/report-retries"
+    retry_request = dict(source_report_id=initial_partial["id"], case_version_ids=[header_version],
+                         source_key="retry-header", attempt=2, environment_id=partial["environment_id"],
+                         build_id=partial["build_id"], artifact_sha256=partial["sha256"],
+                         xml_base64=base64.b64encode(header_only).decode())
+    assert business.call(retry_url, "POST", retry_request, 403)["error"] == "project_tester_required"
+    assert tester.call(retry_url, "POST", dict(retry_request, source_report_id=receipt["id"]), 404)["error"] == "test_report_not_found"
+    assert tester.call(retry_url, "POST", dict(retry_request, case_version_ids=[case2["case_version_id"]]), 422)["error"] == "test_retry_case_ineligible"
+    extra = tester.call(retry_url, "POST", dict(retry_request, xml_base64=base64.b64encode(passed).decode()), 422)
+    assert extra["details"]["extra_case_version_ids"] == [case2["case_version_id"]]
+    assert tester.call(partial_url)["gate"]["counts"] == {"passed": 1, "failed": 0, "skipped": 0, "missing": 1}
+    retry_barrier = Barrier(2)
+
+    def retry_selected(client):
+        retry_barrier.wait(timeout=5)
+        return client.call(retry_url, "POST", retry_request, 201)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        retried, duplicate_retry = list(pool.map(retry_selected, [tester, tester_peer]))
+    assert retried == duplicate_retry and retried["retry_of_report_id"] == initial_partial["id"]
+    assert [row["case_version_id"] for row in retried["results"]] == [header_version]
+    assert tester.call(partial_url)["gate"]["ready"]
+    assert tester.call(f"{base}/test-reports/{initial_partial['id']}") == initial_partial
+    assert upload(tester, partial_url + "/reports", partial, 2, "retry-header", header_only, 409)["error"] == "test_report_content_conflict"
+    assert len(tester.call(partial_url + "/reports")["items"]) == 2
     print("AC-07 and test-gate contract passed: immutable JUnit evidence, scoped outcomes, ordered runs, and exact-build defect revalidation.")
+    print("JUnit partial receipt and exact selection passed: per-row rejects, source linkage, unchanged evidence, and one concurrent retry.")
 
 
 if __name__ == "__main__":

@@ -145,11 +145,20 @@ final readonly class ReleaseCandidates
         $manifest = Input::sha256($input, 'manifest_digest');
         $expectedGate = Input::sha256($input, 'gate_digest');
         $note = Input::string($input, 'note', 4000);
-        return $this->store->transaction(function () use ($actor, $project, $id, $manifest, $expectedGate, $note): array {
-            $authority = $this->projects->lockForPlanning($actor, $project);
+        $delegationId = isset($input['delegation_id']) ? Input::integer($input, 'delegation_id', 1) : null;
+        return $this->store->transaction(function () use ($actor, $project, $id, $manifest, $expectedGate, $note, $delegationId): array {
+            $authority = $this->projects->lockForApproval($actor, $project);
             $candidate = $this->row($actor, $project, $id);
-            if ($authority['product_owner_id'] !== $actor->accountId || $candidate['created_by'] === $actor->accountId) {
-                throw new Problem(403, 'separate_candidate_approver_required');
+            $delegation = $this->approvalDelegation($actor, $project, $id);
+            if ($delegationId !== null) {
+                $this->requireDelegatedApproval($actor, $authority, $candidate, $delegation, $delegationId, $manifest, $expectedGate);
+            } else {
+                if (!$actor->has('admin') && $authority['product_owner_id'] !== $actor->accountId) {
+                    throw new Problem(403, 'project_product_owner_required');
+                }
+                if ($authority['product_owner_id'] !== $actor->accountId || $candidate['created_by'] === $actor->accountId) {
+                    throw new Problem(403, 'separate_candidate_approver_required');
+                }
             }
             $this->checkManifest($candidate, $manifest);
             if (!in_array($candidate['state'], ['pending_approval', 'approved'], true)) {
@@ -163,8 +172,71 @@ final readonly class ReleaseCandidates
                 $approval = $this->store->insert('INSERT INTO candidate_approvals (tenant_id, project_id, candidate_id, gate_digest, result_ids, approved_by, note)
                     VALUES (?, ?, ?, ?, ?, ?, ?)', [$actor->tenantId, $project, $id, $expectedGate, self::encode($gate['result_ids']), $actor->accountId, $note]);
                 $this->changeState($actor, $project, $id, 'approved', $expectedGate);
-                $this->record($actor, $project, $id, 'candidate_approved', ['approval_id' => $approval, 'gate_digest' => $expectedGate]);
+                $details = ['approval_id' => $approval, 'gate_digest' => $expectedGate];
+                if ($delegation !== null && $delegation['closed_at'] === null) {
+                    if ($delegationId === null) {
+                        $this->closeApprovalDelegation($actor, $project, $id, $delegation['id'], 'approved_directly');
+                    } else {
+                        $this->closeApprovalDelegation($actor, $project, $id, $delegationId, 'approved', $approval);
+                        $details += ['delegation_id' => $delegationId, 'delegated_by' => $delegation['delegated_by']];
+                    }
+                }
+                $this->record($actor, $project, $id, 'candidate_approved', $details);
             }
+            return $this->view($actor, $project, $id);
+        });
+    }
+
+    public function setApprovalDelegation(Actor $actor, int $project, int $id, array $input): array
+    {
+        if (!array_key_exists('delegate_id', $input) || !array_key_exists('expected_delegation_id', $input)) {
+            throw new Problem(422, 'invalid_candidate_delegation');
+        }
+        $delegate = $input['delegate_id'] === null ? null : Input::integer($input, 'delegate_id', 1);
+        $expected = $input['expected_delegation_id'] === null ? null : Input::integer($input, 'expected_delegation_id', 1);
+        $manifest = Input::sha256($input, 'manifest_digest');
+        $gate = Input::sha256($input, 'gate_digest');
+        $reason = Input::string($input, 'reason', 1000);
+        return $this->store->transaction(function () use ($actor, $project, $id, $delegate, $expected, $manifest, $gate, $reason): array {
+            $authority = $this->projects->lockForPlanning($actor, $project);
+            $candidate = $this->row($actor, $project, $id);
+            if ($authority['product_owner_id'] !== $actor->accountId || $candidate['created_by'] === $actor->accountId) {
+                throw new Problem(403, 'separate_candidate_approver_required');
+            }
+            $this->checkManifest($candidate, $manifest);
+            if ($candidate['state'] !== 'pending_approval') {
+                throw new Problem(409, 'candidate_state_conflict');
+            }
+            $delegation = $this->approvalDelegation($actor, $project, $id);
+            if (($delegation['id'] ?? null) !== $expected) {
+                throw new Problem(409, 'candidate_delegation_changed');
+            }
+            $active = $delegation !== null && $delegation['closed_at'] === null;
+            if ($delegate === null) {
+                if (!$active || $delegation['gate_digest'] !== $gate) {
+                    throw new Problem(409, 'candidate_delegation_changed');
+                }
+                $this->closeApprovalDelegation($actor, $project, $id, $delegation['id'], 'revoked', null, $reason);
+                return $this->view($actor, $project, $id);
+            }
+            $current = $this->requireReady($this->quality($actor, $project, $candidate));
+            if ($candidate['gate_digest'] !== $gate || $current['digest'] !== $gate) {
+                throw new Problem(409, 'candidate_gate_changed');
+            }
+            if (in_array($delegate, [$actor->accountId, $candidate['created_by'], $authority['business_signer_id']], true)
+                || !$this->projects->participant($actor, $project, $delegate)->has('product')) {
+                throw new Problem(422, 'candidate_delegate_ineligible');
+            }
+            if ($active && $delegation['delegated_to'] === $delegate && $delegation['reason'] === $reason) {
+                return $this->view($actor, $project, $id);
+            }
+            if ($active) {
+                $this->closeApprovalDelegation($actor, $project, $id, $delegation['id'], 'replaced');
+            }
+            $new = $this->store->insert('INSERT INTO candidate_approval_delegations
+                (tenant_id, project_id, candidate_id, manifest_digest, gate_digest, delegated_by, delegated_to, reason)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [$actor->tenantId, $project, $id, $manifest, $gate, $actor->accountId, $delegate, $reason]);
+            $this->record($actor, $project, $id, 'candidate_approval_delegated', ['delegation_id' => $new, 'delegated_to' => $delegate, 'gate_digest' => $gate]);
             return $this->view($actor, $project, $id);
         });
     }
@@ -179,9 +251,12 @@ final readonly class ReleaseCandidates
 
     public function view(Actor $actor, int $project, int $id): array
     {
-        $this->projects->view($actor, $project);
+        $authority = $this->projects->view($actor, $project);
         $candidate = $this->row($actor, $project, $id);
         $candidate['quality'] = $this->quality($actor, $project, $candidate);
+        $candidate['approval_delegation'] = $this->approvalDelegation($actor, $project, $id);
+        $candidate['can_delegate_approval'] = $candidate['state'] === 'pending_approval'
+            && $authority['product_owner_id'] === $actor->accountId && $candidate['created_by'] !== $actor->accountId;
         $candidate['approval_valid'] = in_array($candidate['state'], ['approved', 'deployed', 'accepted'], true) && $candidate['quality']['ready']
             && $candidate['gate_digest'] === $candidate['quality']['digest'];
         $candidate['successor_id'] = $this->store->one('SELECT id FROM release_candidates WHERE tenant_id=? AND project_id=? AND previous_id=?',
@@ -193,8 +268,11 @@ final readonly class ReleaseCandidates
     {
         $this->projects->view($actor, $project);
         $this->row($actor, $project, $id);
-        $rows = $this->store->all('SELECT id, gate_digest, result_ids, approved_by, note, approved_at, revoked_at FROM candidate_approvals
-            WHERE tenant_id=? AND project_id=? AND candidate_id=? AND id>? ORDER BY id LIMIT 51', [$actor->tenantId, $project, $id, $after]);
+        $rows = $this->store->all('SELECT a.id, a.gate_digest, a.result_ids, a.approved_by, a.note, a.approved_at, a.revoked_at,
+                d.id AS delegation_id, d.delegated_by
+            FROM candidate_approvals a LEFT JOIN candidate_approval_delegations d
+                ON (d.tenant_id,d.project_id,d.candidate_id,d.approval_id)=(a.tenant_id,a.project_id,a.candidate_id,a.id)
+            WHERE a.tenant_id=? AND a.project_id=? AND a.candidate_id=? AND a.id>? ORDER BY a.id LIMIT 51', [$actor->tenantId, $project, $id, $after]);
         foreach ($rows as &$row) {
             $row['result_ids'] = json_decode($row['result_ids'], true, 32, JSON_THROW_ON_ERROR);
         }
@@ -254,6 +332,40 @@ final readonly class ReleaseCandidates
         }
     }
 
+    private function requireDelegatedApproval(Actor $actor, array $authority, array $candidate, ?array $delegation,
+        int $requested, string $manifest, string $gate): void
+    {
+        if ($delegation === null || $delegation['id'] !== $requested
+            || $delegation['manifest_digest'] !== $manifest || $delegation['gate_digest'] !== $gate
+            || ($delegation['closed_at'] !== null && $delegation['closed_reason'] !== 'approved')) {
+            throw new Problem(409, 'candidate_delegation_changed');
+        }
+        if ($delegation['delegated_to'] !== $actor->accountId || $delegation['delegated_by'] !== $authority['product_owner_id']
+            || $candidate['created_by'] === $actor->accountId || $authority['business_signer_id'] === $actor->accountId || !$actor->has('product')) {
+            throw new Problem(403, 'candidate_delegated_approver_required');
+        }
+    }
+
+    private function approvalDelegation(Actor $actor, int $project, int $id): ?array
+    {
+        return $this->store->one('SELECT d.id, d.manifest_digest, d.gate_digest, d.delegated_by, d.delegated_to, d.reason,
+                d.created_at, d.closed_at, d.closed_reason, d.approval_id, p.name AS delegated_by_name, q.name AS delegated_to_name
+            FROM candidate_approval_delegations d
+            JOIN accounts p ON (p.tenant_id,p.id)=(d.tenant_id,d.delegated_by)
+            JOIN accounts q ON (q.tenant_id,q.id)=(d.tenant_id,d.delegated_to)
+            WHERE d.tenant_id=? AND d.project_id=? AND d.candidate_id=? ORDER BY d.id DESC LIMIT 1',
+            [$actor->tenantId, $project, $id]);
+    }
+
+    private function closeApprovalDelegation(Actor $actor, int $project, int $candidate, int $id, string $outcome,
+        ?int $approval = null, ?string $reason = null): void
+    {
+        $this->store->execute('UPDATE candidate_approval_delegations SET closed_at=UTC_TIMESTAMP(6), closed_reason=?, approval_id=?
+            WHERE tenant_id=? AND project_id=? AND candidate_id=? AND id=? AND closed_at IS NULL',
+            [$outcome, $approval, $actor->tenantId, $project, $candidate, $id]);
+        $this->record($actor, $project, $candidate, 'candidate_approval_delegation_closed', ['delegation_id' => $id, 'outcome' => $outcome, 'reason' => $reason]);
+    }
+
     private function changeState(Actor $actor, int $project, int $id, string $state, ?string $gate = null): void
     {
         $this->store->execute('UPDATE release_candidates SET state=?, gate_digest=?, updated_at=UTC_TIMESTAMP(6)
@@ -262,6 +374,10 @@ final readonly class ReleaseCandidates
 
     private function revoke(Actor $actor, int $project, int $id, string $reason): void
     {
+        $delegation = $this->approvalDelegation($actor, $project, $id);
+        if ($delegation !== null && $delegation['closed_at'] === null) {
+            $this->closeApprovalDelegation($actor, $project, $id, $delegation['id'], $reason);
+        }
         $count = $this->store->execute('UPDATE candidate_approvals SET revoked_at=UTC_TIMESTAMP(6)
             WHERE tenant_id=? AND project_id=? AND candidate_id=? AND revoked_at IS NULL', [$actor->tenantId, $project, $id]);
         if ($count) {

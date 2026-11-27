@@ -109,8 +109,8 @@ const errors = {
 };
 let busy = false;
 
-async function call(path, method = 'GET', input) {
-  const options = {method, headers: {'Accept': 'application/json'}};
+async function call(path, method = 'GET', input, headers = {}) {
+  const options = {method, headers: {'Accept': 'application/json', ...headers}};
   if (method !== 'GET') {
     options.headers['Content-Type'] = 'application/json';
     options.headers['X-CSRF-Token'] = state.csrf;
@@ -644,6 +644,8 @@ function readRepositoryEvents(id) {
 }
 
 function resetDeliveryViews() {
+  $('train-board').hidden = true;
+  for (const id of ['train-services','train-environments','train-editors','train-list','train-detail']) $(id).replaceChildren();
   state.baseline = state.change = state.work = state.sprint = state.repository = null;
   resetProposal();
   for (const id of ['changes', 'change-detail', 'sprints', 'sprint-detail', 'work-items', 'work-detail',

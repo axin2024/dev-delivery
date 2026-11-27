@@ -4,6 +4,8 @@ x-delivery-environment: &delivery-environment
   DELIVERY_DB_PASSWORD: "${DELIVERY_DB_PASSWORD:?set DELIVERY_DB_PASSWORD}"
   DELIVERY_COOKIE_SECURE: "${DELIVERY_COOKIE_SECURE:-1}"
   DELIVERY_CONNECTOR_MASTER_KEY: "${DELIVERY_CONNECTOR_MASTER_KEY:?set DELIVERY_CONNECTOR_MASTER_KEY}"
+  DELIVERY_TRAIN_ADAPTER_URL: "${DELIVERY_TRAIN_ADAPTER_URL:-http://127.0.0.1:8098}"
+  DELIVERY_TRAIN_ADAPTER_TOKEN: "${DELIVERY_TRAIN_ADAPTER_TOKEN:-}"
 
 services:
   db:
@@ -47,5 +49,32 @@ services:
       retries: 12
     restart: unless-stopped
 
+  train-node:
+    image: python:3.13-alpine
+    profiles: ["trains"]
+    network_mode: "service:web"
+    environment:
+      DELIVERY_TRAIN_ADAPTER_TOKEN: "${DELIVERY_TRAIN_ADAPTER_TOKEN:-}"
+    volumes:
+      - ./examples/train-node/server.py:/opt/train/server.py:ro
+      - train-nodes:/var/lib/train
+    command: ["python3", "/opt/train/server.py", "--data", "/var/lib/train"]
+    restart: unless-stopped
+
+  train-worker:
+    image: dev-delivery:local
+    pull_policy: never
+    profiles: ["trains"]
+    network_mode: "service:web"
+    environment: *delivery-environment
+    depends_on:
+      web:
+        condition: service_healthy
+      train-node:
+        condition: service_started
+    command: ["php", "bin/delivery.php", "train-worker"]
+    restart: unless-stopped
+
 volumes:
   mysql-data:
+  train-nodes:

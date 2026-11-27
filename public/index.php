@@ -7,7 +7,7 @@ require dirname(__DIR__) . '/src/bootstrap.php';
 
 $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH);
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-if (PHP_SAPI === 'cli-server' && in_array($path, ['/workspace.js', '/testing.js', '/release.js', '/deployments.js', '/signoffs.js', '/operations.js', '/workspace.css'], true)) {
+if (PHP_SAPI === 'cli-server' && in_array($path, ['/workspace.js', '/testing.js', '/release.js', '/release-trains.js', '/deployments.js', '/signoffs.js', '/operations.js', '/workspace.css'], true)) {
     return false;
 }
 header('X-Content-Type-Options: nosniff');
@@ -19,7 +19,7 @@ if ($method === 'GET' && $path === '/') {
     readfile(dirname(__DIR__) . '/resources/workspace.html');
     exit;
 }
-if (is_string($path) && ($path === '/healthz' || str_starts_with($path, '/api/'))) {
+if (is_string($path) && ($path === '/healthz' || str_starts_with($path, '/api/') || preg_match('~^/release-trains/[1-9][0-9]*/waves/[1-9][0-9]*/advance$~D',$path))) {
     (new Http())->handle($method, $path);
     exit;
 }

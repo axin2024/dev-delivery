@@ -22,8 +22,10 @@ class Session:
         self.client = build_opener(HTTPCookieProcessor(CookieJar()))
         self.csrf = None
 
-    def call(self, path, method="GET", data=None, status=200, *, csrf=True):
+    def call(self, path, method="GET", data=None, status=200, *, csrf=True, key=None):
         headers = {"Accept": "application/json"}
+        if key:
+            headers["Idempotency-Key"]=key
         if method != "GET":
             headers["Content-Type"] = "application/json"
             if csrf and self.csrf:

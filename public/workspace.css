@@ -46,3 +46,5 @@ fieldset { display: grid; gap: .7rem; margin: .7rem 0; border: 1px solid #cdd9e2
 #snapshot-detail article, #repository-detail article { display: grid; gap: .4rem; }
 #repository-detail code, #snapshot-detail code { user-select: all; }
 @media (max-width: 48rem) { #workspace { grid-template-columns: 1fr; } }
+.train-columns { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(22rem,100%),1fr)); gap:1.2rem; }
+#train-board article { overflow-wrap:anywhere; }

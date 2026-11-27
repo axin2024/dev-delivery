@@ -186,7 +186,7 @@ final readonly class Planning
                 }
             }
         }
-        $cycle = $this->cycle($upstream, $roots);
+        $cycle = DependencyGraph::resolve($upstream, $roots)['cycle'];
         if ($cycle) {
             $cycleItems = array_fill_keys($cycle, true);
             foreach ($edges as $edge) {
@@ -200,38 +200,6 @@ final readonly class Planning
             }
         }
         return ['cycle' => $cycle, 'schedule_conflicts' => $conflicts, 'affected_sprint_ids' => array_values(array_unique($sprints))];
-    }
-
-    private function cycle(array $upstream, array $roots): array
-    {
-        $visited = [];
-        foreach ($roots as $root) {
-            if (isset($visited[$root])) {
-                continue;
-            }
-            $stack = [[$root, 0]];
-            $active = [$root => 0];
-            while ($stack) {
-                $last = count($stack) - 1;
-                [$work, $index] = $stack[$last];
-                $predecessor = $upstream[$work][$index] ?? null;
-                if ($predecessor === null) {
-                    $visited[$work] = true;
-                    unset($active[$work]);
-                    array_pop($stack);
-                    continue;
-                }
-                $stack[$last][1]++;
-                if (isset($active[$predecessor])) {
-                    return [...array_column(array_slice($stack, $active[$predecessor]), 0), $predecessor];
-                }
-                if (!isset($visited[$predecessor])) {
-                    $active[$predecessor] = count($stack);
-                    $stack[] = [$predecessor, 0];
-                }
-            }
-        }
-        return [];
     }
 
     private function work(Actor $actor, int $project, int $id): array

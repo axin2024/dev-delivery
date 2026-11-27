@@ -8,6 +8,7 @@
   <script src="/workspace.js" defer></script>
   <script src="/testing.js" defer></script>
   <script src="/release.js" defer></script>
+  <script src="/release-trains.js" defer></script>
   <script src="/deployments.js" defer></script>
   <script src="/signoffs.js" defer></script>
   <script src="/operations.js" defer></script>
@@ -351,6 +352,20 @@
               <label>复测结论<textarea name="note" required></textarea></label>
               <button>确认复测并关闭</button>
             </form>
+          </section>
+          <section class="panel">
+            <h2>发布列车</h2>
+            <button type="button" id="open-trains">打开发布看板</button>
+            <div id="train-board" hidden>
+              <div class="train-columns">
+                <div><h3>服务与依赖顺序</h3><div id="train-services"></div></div>
+                <div><h3>环境与变更窗口</h3><div id="train-environments"></div></div>
+              </div>
+              <div id="train-editors"></div>
+              <h3>发布列车</h3>
+              <div id="train-list" class="item-list"></div>
+              <div id="train-detail"></div>
+            </div>
           </section>
           <section class="panel">
             <h2>发布候选</h2>

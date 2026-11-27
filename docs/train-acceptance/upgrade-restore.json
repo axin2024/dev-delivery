@@ -1,0 +1,58 @@
+{
+  "previous_tag": "v1.1.0",
+  "previous_commit": "59c7273006208a25b3209e5568ca3ce025e92c96",
+  "previous_migration_count": 11,
+  "upgrade_migrations": [
+    "012_release_service_catalog",
+    "013_release_trains",
+    "014_train_waves",
+    "015_train_recovery",
+    "016_train_pilot"
+  ],
+  "upgrade_history_tables": [
+    "accounts",
+    "baselines",
+    "test_reports",
+    "test_results",
+    "candidate_approvals",
+    "deployments",
+    "delivery_reports",
+    "review_packages"
+  ],
+  "upgrade_replay_applied": 0,
+  "upgraded_archive": {
+    "delivery_deployment_id": 4,
+    "delivery_report_sha256": "b869360df1da4b72e50eaa0bfc6886498b5c1f833e62371b1a2911122416f15b",
+    "package_id": 1,
+    "package_sha256": "3fe66ec5f4042fcb3e9ceaf6f91b45e32037805303b5b63eba218028b40b8a8e",
+    "junit_report_id": 1,
+    "junit_xml_sha256": "a7d49db25fba230e57565744f797b78947daac495dc856f54fb1ef0d4dee287f",
+    "approver": "备用产品",
+    "delegation_id": 1
+  },
+  "fresh_migration_count": 16,
+  "backup_bytes": 171211,
+  "restored_tables": [
+    "accounts",
+    "baselines",
+    "test_reports",
+    "test_results",
+    "candidate_approvals",
+    "deployments",
+    "delivery_reports",
+    "review_packages",
+    "candidate_approval_delegations",
+    "test_report_retries"
+  ],
+  "restored_archive": {
+    "delivery_deployment_id": 4,
+    "delivery_report_sha256": "adb307df325ee49e548aca96023cd0cf3a3f46cd97552d46c24cdb82e06fb253",
+    "package_id": 1,
+    "package_sha256": "360ea4985d76829e84cf7073cbb0407ae25bcdf164e91f8dcce36dcb089b1410",
+    "junit_report_id": 1,
+    "junit_xml_sha256": "a7d49db25fba230e57565744f797b78947daac495dc856f54fb1ef0d4dee287f",
+    "approver": "备用产品",
+    "delegation_id": 1
+  },
+  "browser": "Chrome headless"
+}

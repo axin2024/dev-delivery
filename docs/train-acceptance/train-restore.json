@@ -1,0 +1,134 @@
+{
+  "counts": {
+    "release_train_revisions": 6,
+    "train_component_approvals": 9,
+    "train_rehearsals": 11,
+    "train_executions": 7,
+    "train_recovery_items": 10,
+    "train_samples": 14
+  },
+  "manifests": 6,
+  "approvals": 9,
+  "nodes": [
+    {
+      "node": "prod-00",
+      "service": 3,
+      "operation": "e3b699d1d3d305ef1eea2a305fd1aeb3",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    },
+    {
+      "node": "prod-01",
+      "service": 3,
+      "operation": "8b9a37f98859e752b275e5fb0bcc69f4",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    },
+    {
+      "node": "prod-02",
+      "service": 3,
+      "operation": "e2847436164fe10854ae29d0f63840cc",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    },
+    {
+      "node": "prod-03",
+      "service": 3,
+      "operation": "6801f9620129b1236fadafc670e899c6",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    },
+    {
+      "node": "prod-04",
+      "service": 3,
+      "operation": "7f56841d5a7ed7ed9dff61c825430dc5",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    },
+    {
+      "node": "prod-05",
+      "service": 3,
+      "operation": "01b4a76770e0f1178facf05f69d08151",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    },
+    {
+      "node": "prod-06",
+      "service": 3,
+      "operation": "2ddf6dde5c29cae4fdc63caaf4223cba",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    },
+    {
+      "node": "prod-07",
+      "service": 3,
+      "operation": "89015a741e3d2ab60b880f81f9cfe75f",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    },
+    {
+      "node": "prod-08",
+      "service": 3,
+      "operation": "f4852714b1134599d4f6848200cd24a6",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    },
+    {
+      "node": "prod-09",
+      "service": 3,
+      "operation": "687649c241d94854c9c2da063ccada11",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    },
+    {
+      "node": "node-00",
+      "service": 3,
+      "operation": "77c55b3e50281f09f78bac948033321b",
+      "verified_digest": "562840d572c7c449134443c53bbd90fc3f3496c32ac1933a7ac6440dd91d5031"
+    },
+    {
+      "node": "node-01",
+      "service": 3,
+      "operation": "1c2385822ef9fade094ff63571dd4f4a",
+      "verified_digest": "562840d572c7c449134443c53bbd90fc3f3496c32ac1933a7ac6440dd91d5031"
+    },
+    {
+      "node": "node-02",
+      "service": 3,
+      "operation": "d3a503412018a6245f53d27a1d00aa70",
+      "verified_digest": "562840d572c7c449134443c53bbd90fc3f3496c32ac1933a7ac6440dd91d5031"
+    },
+    {
+      "node": "node-03",
+      "service": 3,
+      "operation": "290ef40557a6f76f49c5d0d730eba5a2",
+      "verified_digest": "562840d572c7c449134443c53bbd90fc3f3496c32ac1933a7ac6440dd91d5031"
+    },
+    {
+      "node": "node-04",
+      "service": 3,
+      "operation": "451f787e29c74f2e36f295c3c8d37ebd",
+      "verified_digest": "68312cac4efcaf0e832d4fbc14a67d866e6a999c15284a0061319a5eab6773ed"
+    },
+    {
+      "node": "node-00",
+      "service": 3,
+      "operation": "163db0ec3db937c2feab980b6ca0a707",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    },
+    {
+      "node": "node-01",
+      "service": 3,
+      "operation": "319631cca8dc59b24438d92966d568a8",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    },
+    {
+      "node": "node-02",
+      "service": 3,
+      "operation": "98924c7f20910574f2aa6d8693b69c3d",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    },
+    {
+      "node": "node-03",
+      "service": 3,
+      "operation": "ec72a1278477585bf79e312f0e52e131",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    },
+    {
+      "node": "node-04",
+      "service": 3,
+      "operation": "a654cd00402c631ccedcc2eded14a827",
+      "verified_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+    }
+  ]
+}

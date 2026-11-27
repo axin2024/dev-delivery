@@ -62,6 +62,11 @@ final class Http
                 return;
             }
             $actor = $this->actor($accounts);
+            if (preg_match('~\A/release-trains/([1-9][0-9]{0,17})/waves/([1-9][0-9]{0,17})/advance\z~',$path,$direct)) {
+                $owner=$store->one('SELECT project_id FROM release_trains WHERE tenant_id=? AND id=?',[$actor->tenantId,(int)$direct[1]])
+                    ?? throw new Problem(404,'train_not_found');
+                $path='/api/projects/'.$owner['project_id'].$path;
+            }
             if ($method === 'POST' && $path === '/api/logout') {
                 session_regenerate_id(true);
                 $_SESSION = ['csrf' => bin2hex(random_bytes(32))];
@@ -76,6 +81,77 @@ final class Http
                     'GET' => [200, $accounts->listing($actor, $this->cursor())],
                     'POST' => [201, $accounts->create($actor, $input)->view()],
                     default => throw new Problem(405, 'method_not_allowed'),
+                };
+            } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/release-trains/([1-9][0-9]{0,17})/executions/([1-9][0-9]{0,17})/handover\z~',$path,$m)) {
+                if ($method!=='POST') throw new Problem(405,'method_not_allowed');
+                $result=(new TrainExecution($store,$projects,$audit))->handover($actor,(int)$m[1],(int)$m[2],(int)$m[3],$input);
+                $status=200;
+            } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/release-trains/([1-9][0-9]{0,17})/recovery(?:/(step))?\z~',$path,$m)) {
+                $recovery=new TrainRecovery($store,$projects,$audit);
+                [$status,$result]=match ([$method,$m[3] ?? '']) {
+                    ['GET','']=>[200,$recovery->detail($actor,(int)$m[1],(int)$m[2])],
+                    ['POST',''],['POST','step']=>[200,$recovery->control($actor,(int)$m[1],(int)$m[2],$input,!isset($m[3]))],
+                    default=>throw new Problem(405,'method_not_allowed'),
+                };
+            } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/release-trains/([1-9][0-9]{0,17})/(wave-plan|pause|resume|waves/([1-9][0-9]{0,17})/(samples|observations|waivers|advance)|executions/([1-9][0-9]{0,17}))\z~',$path,$m)) {
+                $waves=new TrainWaves($store,$projects,$audit);
+                $worker=new TrainExecution($store,$projects,$audit);
+                $project=(int)$m[1];
+                $id=(int)$m[2];
+                $wave=(int)($m[4] ?? 0);
+                $action=isset($m[6])?'execution':($m[5] ?? $m[3]);
+                [$status,$result]=match ([$method,$action]) {
+                    ['GET','wave-plan'] => [200,$waves->overview($actor,$project,$id)],
+                    ['POST','wave-plan'] => [201,$waves->plan($actor,$project,$id,$input)],
+                    ['POST','samples'] => [201,$waves->sample($actor,$project,$id,$wave,$input)],
+                    ['POST','observations'] => [201,$waves->observe($actor,$project,$id,$wave)],
+                    ['POST','waivers'] => [201,$waves->waive($actor,$project,$id,$wave,$input)],
+                    ['POST','advance'] => [202,$waves->advance($actor,$project,$id,$wave,$input,$_SERVER['HTTP_IDEMPOTENCY_KEY'] ?? '')],
+                    ['GET','execution'] => [200,$worker->detail($actor,$project,$id,(int)$m[6])],
+                    ['POST','pause'],['POST','resume'] => [200,$worker->hold($actor,$project,$id,$action==='resume',$input)],
+                    default => throw new Problem(405,'method_not_allowed'),
+                };
+                if ($action==='advance') {
+                    header('Location: /api/projects/'.$project.'/release-trains/'.$id.'/executions/'.$result['execution_id']);
+                }
+            } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/environments/([1-9][0-9]{0,17})/train-access(?:/(owner|connector))?\z~',$path,$m)) {
+                $access=new TrainEnvironments($store,$projects,$audit);
+                [$status,$result]=match ([$method,$m[3] ?? '']) {
+                    ['GET',''] => [200,$access->read($actor,(int)$m[1],(int)$m[2])],
+                    ['PUT','owner'], ['PUT','connector'] => [200,$access->configure($actor,(int)$m[1],(int)$m[2],$m[3],$input)],
+                    default => throw new Problem(405,'method_not_allowed'),
+                };
+            } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/release-trains(?:/([1-9][0-9]{0,17})(?:/(freeze|replace|gates|rehearse|approve|window|manifests/([1-9][0-9]{0,8})))?)?\z~',$path,$m)) {
+                $trains=new ReleaseTrains($store,$projects,$audit);
+                $readiness=new TrainReadiness($store,$projects,$audit);
+                $project=(int)$m[1];
+                $id=(int)($m[2] ?? 0);
+                $action=$m[3] ?? '';
+                if ($method==='GET' && isset($m[4])) {
+                    $version=$trains->version($actor,$project,$id,(int)$m[4]);
+                    $this->respond(200,$version['manifest'],"release-train-".$id."-r".$version['revision'].".json");
+                    return;
+                }
+                [$status,$result]=match ([$method,$id===0,$action]) {
+                    ['GET',true,''] => [200,$trains->listing($actor,$project,$this->cursor())],
+                    ['POST',true,''] => [201,$trains->create($actor,$project,$input)],
+                    ['GET',false,''] => [200,$trains->current($actor,$project,$id)],
+                    ['POST',false,'freeze'], ['POST',false,'replace'] => [201,$trains->freeze($actor,$project,$id,$input,$action==='replace')],
+                    ['GET',false,'gates'] => [200,$readiness->gates($actor,$project,$id)],
+                    ['POST',false,'rehearse'] => [200,$readiness->rehearse($actor,$project,$id,$input)],
+                    ['POST',false,'approve'] => [201,$readiness->approve($actor,$project,$id,$input)],
+                    ['POST',false,'window'] => [201,$readiness->book($actor,$project,$id,$input)],
+                    default => throw new Problem(405,'method_not_allowed'),
+                };
+            } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/release-services(?:/([1-9][0-9]{0,17})(?:/(dependencies|pin))?)?\z~', $path, $m)) {
+                $catalog = new ReleaseServices($store,$projects,$audit);
+                $project = (int)$m[1];
+                [$status,$result] = match ([$method,isset($m[2]),$m[3] ?? '']) {
+                    ['GET',false,''] => [200,$catalog->graph($actor,$project)],
+                    ['POST',false,''] => [201,$catalog->register($actor,$project,$input)],
+                    ['GET',true,''] => [200,$catalog->read($actor,$project,(int)$m[2])],
+                    ['PUT',true,'dependencies'], ['PUT',true,'pin'] => [200,$catalog->change($actor,$project,(int)$m[2],$m[3],$input)],
+                    default => throw new Problem(405,'method_not_allowed'),
                 };
             } elseif (preg_match('~\A/api/projects/([1-9][0-9]{0,17})/signoffs(/.*)?\z~', $path, $signoff)) {
                 [$status, $result, $filename] = array_pad((new SignoffHttp(new BusinessSignoff($store, $projects, $audit)))->dispatch(

@@ -30,6 +30,8 @@ php -S 127.0.0.1:8080 -t public public/index.php
 
 ## 文档
 
+- [多服务发布列车、分波部署与恢复操作](docs/release-trains.md)
+- [2.0 需求及十四项验收条件](docs/requirements/08-发布列车-prd.md)
 - [产品总览](docs/requirements/01-产品总览-prd.md)
 - [业务功能与交互](docs/requirements/02-业务与交互-prd.md)
 - [MySQL 数据与集成](docs/requirements/03-MySQL与集成-prd.md)

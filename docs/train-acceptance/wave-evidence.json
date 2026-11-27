@@ -1,0 +1,300 @@
+{
+  "waves": {
+    "train_rev": 1,
+    "state": "completed",
+    "plan": {
+      "id": 1,
+      "production_rev": 2,
+      "min_requests": 100,
+      "max_error_bps": 200,
+      "interval_seconds": 300,
+      "observed_at": "2026-11-27 03:12:05.574650"
+    },
+    "environment_rev": 2,
+    "window": {
+      "window_id": 3,
+      "starts_at": "2026-11-27 03:11:05.000000",
+      "ends_at": "2026-11-27 03:27:05.000000",
+      "approval_id": 3
+    },
+    "waves": [
+      {
+        "wave_id": 1,
+        "sequence_no": 1,
+        "targets": [
+          "prod-00"
+        ],
+        "state": "done",
+        "completed_at": "2026-11-27 03:12:06.577570",
+        "execution_id": 1,
+        "trace_id": "a1b11435aae62b4036b3f7a196784eaa",
+        "observation": {
+          "observation_id": 2,
+          "before_requests": 1000,
+          "before_errors": 0,
+          "after_requests": 1000,
+          "after_errors": 0,
+          "anchor_at": "2026-11-27 03:12:05.574650",
+          "sample_through": "2026-11-27 03:12:06.247868",
+          "decision": "allow",
+          "waiver_id": null,
+          "expires_at": null
+        }
+      },
+      {
+        "wave_id": 2,
+        "sequence_no": 2,
+        "targets": [
+          "prod-01",
+          "prod-02",
+          "prod-03",
+          "prod-04"
+        ],
+        "state": "done",
+        "completed_at": "2026-11-27 03:13:17.941444",
+        "execution_id": 2,
+        "trace_id": "dd0d4178f26c87f2a1bb6073ccc5a98e",
+        "observation": {
+          "observation_id": 4,
+          "before_requests": 1000,
+          "before_errors": 0,
+          "after_requests": 1000,
+          "after_errors": 30,
+          "anchor_at": "2026-11-27 03:12:06.577570",
+          "sample_through": "2026-11-27 03:13:16.567568",
+          "decision": "pause",
+          "waiver_id": 1,
+          "expires_at": "2026-11-27 03:18:16.000000"
+        }
+      },
+      {
+        "wave_id": 3,
+        "sequence_no": 3,
+        "targets": [
+          "prod-05",
+          "prod-06",
+          "prod-07",
+          "prod-08",
+          "prod-09"
+        ],
+        "state": "done",
+        "completed_at": "2026-11-27 03:13:19.674836",
+        "execution_id": 3,
+        "trace_id": "882e5ff3b01195802ad059f9319a0f90",
+        "observation": {
+          "observation_id": 6,
+          "before_requests": 1000,
+          "before_errors": 0,
+          "after_requests": 1000,
+          "after_errors": 0,
+          "anchor_at": "2026-11-27 03:13:17.941444",
+          "sample_through": "2026-11-27 03:13:18.413372",
+          "decision": "allow",
+          "waiver_id": null,
+          "expires_at": null
+        }
+      }
+    ]
+  },
+  "evidence": [
+    {
+      "request": {
+        "revision": 1,
+        "approval_id": 3,
+        "observation_id": 2
+      },
+      "accepted": {
+        "execution_id": 1,
+        "pinned_targets": [
+          "prod-00"
+        ],
+        "state": "accepted"
+      },
+      "unknown": {
+        "execution_id": 1,
+        "trace_id": "a1b11435aae62b4036b3f7a196784eaa",
+        "wave_state": "running",
+        "targets": [
+          {
+            "id": 1,
+            "node": "prod-00",
+            "service_id": 3,
+            "digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e",
+            "previous_digest": null,
+            "operation_key": "66fa883888158feabcc9407a17cc2af4",
+            "state": "unknown",
+            "receipt": {
+              "error": "train_adapter_unavailable",
+              "details": {
+                "operation": "66fa883888158feabcc9407a17cc2af4"
+              }
+            },
+            "applied_at": null
+          }
+        ],
+        "timeline": [
+          {
+            "id": 1,
+            "operation_id": 1,
+            "node": "prod-00",
+            "service_id": 3,
+            "command": "result",
+            "started_at": "2026-11-27 03:12:06.510086",
+            "ended_at": "2026-11-27 03:12:06.520339",
+            "outcome": "ok",
+            "observed_digest": null
+          },
+          {
+            "id": 2,
+            "operation_id": 1,
+            "node": "prod-00",
+            "service_id": 3,
+            "command": "current",
+            "started_at": "2026-11-27 03:12:06.525934",
+            "ended_at": "2026-11-27 03:12:06.549656",
+            "outcome": "ok",
+            "observed_digest": null
+          },
+          {
+            "id": 3,
+            "operation_id": 1,
+            "node": "prod-00",
+            "service_id": 3,
+            "command": "apply",
+            "started_at": "2026-11-27 03:12:06.567858",
+            "ended_at": "2026-11-27 03:12:06.587407",
+            "outcome": "train_adapter_unavailable",
+            "observed_digest": null
+          }
+        ],
+        "quality": {
+          "accepted_at": "2026-11-27 03:12:06.307104",
+          "observation_id": 2,
+          "approval_id": 3,
+          "anchor_at": "2026-11-27 03:12:05.574650",
+          "sample_through": "2026-11-27 03:12:06.247868",
+          "before_requests": 1000,
+          "after_requests": 1000,
+          "before_errors": 0,
+          "after_errors": 0,
+          "decision": "allow"
+        },
+        "handovers": []
+      },
+      "done": {
+        "execution_id": 1,
+        "trace_id": "a1b11435aae62b4036b3f7a196784eaa",
+        "wave_state": "done",
+        "targets": [
+          {
+            "id": 1,
+            "node": "prod-00",
+            "service_id": 3,
+            "digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e",
+            "previous_digest": null,
+            "operation_key": "66fa883888158feabcc9407a17cc2af4",
+            "state": "done",
+            "receipt": {
+              "node": "prod-00",
+              "probe": {
+                "passed": true,
+                "missing": [],
+                "incompatible": []
+              },
+              "digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e",
+              "service": 3,
+              "migration": {
+                "added": [
+                  "billing_code"
+                ]
+              },
+              "operation": "66fa883888158feabcc9407a17cc2af4",
+              "applied_at": "2026-11-27 03:12:06.577570",
+              "effect_count": 1,
+              "observed_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e",
+              "previous_digest": null
+            },
+            "applied_at": "2026-11-27 03:12:06.577570"
+          }
+        ],
+        "timeline": [
+          {
+            "id": 1,
+            "operation_id": 1,
+            "node": "prod-00",
+            "service_id": 3,
+            "command": "result",
+            "started_at": "2026-11-27 03:12:06.510086",
+            "ended_at": "2026-11-27 03:12:06.520339",
+            "outcome": "ok",
+            "observed_digest": null
+          },
+          {
+            "id": 2,
+            "operation_id": 1,
+            "node": "prod-00",
+            "service_id": 3,
+            "command": "current",
+            "started_at": "2026-11-27 03:12:06.525934",
+            "ended_at": "2026-11-27 03:12:06.549656",
+            "outcome": "ok",
+            "observed_digest": null
+          },
+          {
+            "id": 3,
+            "operation_id": 1,
+            "node": "prod-00",
+            "service_id": 3,
+            "command": "apply",
+            "started_at": "2026-11-27 03:12:06.567858",
+            "ended_at": "2026-11-27 03:12:06.587407",
+            "outcome": "train_adapter_unavailable",
+            "observed_digest": null
+          },
+          {
+            "id": 4,
+            "operation_id": 1,
+            "node": "prod-00",
+            "service_id": 3,
+            "command": "result",
+            "started_at": "2026-11-27 03:12:41.476984",
+            "ended_at": "2026-11-27 03:12:41.488054",
+            "outcome": "ok",
+            "observed_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+          },
+          {
+            "id": 5,
+            "operation_id": 1,
+            "node": "prod-00",
+            "service_id": 3,
+            "command": "current",
+            "started_at": "2026-11-27 03:12:41.492252",
+            "ended_at": "2026-11-27 03:12:41.500767",
+            "outcome": "ok",
+            "observed_digest": "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e"
+          }
+        ],
+        "quality": {
+          "accepted_at": "2026-11-27 03:12:06.307104",
+          "observation_id": 2,
+          "approval_id": 3,
+          "anchor_at": "2026-11-27 03:12:05.574650",
+          "sample_through": "2026-11-27 03:12:06.247868",
+          "before_requests": 1000,
+          "after_requests": 1000,
+          "before_errors": 0,
+          "after_errors": 0,
+          "decision": "allow"
+        },
+        "handovers": []
+      },
+      "node_operations": [
+        [
+          "66fa883888158feabcc9407a17cc2af4",
+          "cc55042ca7ca618641259297500e979160812307f668907acf92e6b1bc9e917e",
+          "apply"
+        ]
+      ]
+    }
+  ]
+}

@@ -50,7 +50,7 @@ jobs:
       - name: Install baseline and migrate
         run: |
           baseline="$(mktemp -d)"
-          git archive f552372 -- bin src database | tar -xf - -C "$baseline"
+          git archive 59c7273 -- bin src database | tar -xf - -C "$baseline"
           php "$baseline/bin/delivery.php" migrate
           php bin/delivery.php migrate
           test "$(php bin/delivery.php migrate)" = '{"applied":[]}'
@@ -58,16 +58,32 @@ jobs:
       - name: Start two servers and run acceptance
         run: |
           export DELIVERY_CONNECTOR_MASTER_KEY="$(openssl rand -hex 32)"
+          export DELIVERY_TRAIN_ADAPTER_TOKEN="$(openssl rand -hex 32)"
+          export DELIVERY_TRAIN_ADAPTER_URL=http://127.0.0.1:8098
+          export DELIVERY_TRAIN_ADAPTER_DATA="$RUNNER_TEMP/train-evidence/nodes"
+          export DELIVERY_VERIFY_BROWSER=1 DELIVERY_VERIFY_TRAIN_CAPACITY=1
+          export DELIVERY_MYSQL_VERSION="$(php -r 'echo (new PDO(getenv("DELIVERY_DSN"),getenv("DELIVERY_DB_USER"),getenv("DELIVERY_DB_PASSWORD")))->query("SELECT VERSION()")->fetchColumn();')"
+          python3 -m pip install playwright
+          python3 -B examples/train-node/server.py --port 8098 --data "$DELIVERY_TRAIN_ADAPTER_DATA" --drop-first-response-on prod-00 >/tmp/delivery-node.log 2>&1 &
+          node_pid=$!
           php -S 127.0.0.1:8080 -t public public/index.php > /tmp/delivery-main.log 2>&1 &
           primary=$!
           php -S 127.0.0.1:8081 -t public public/index.php > /tmp/delivery-peer.log 2>&1 &
           peer=$!
-          trap 'kill "$primary" "$peer" 2>/dev/null || true' EXIT
+          trap 'kill "$primary" "$peer" "$node_pid" 2>/dev/null || true' EXIT
           curl -fsS --retry 10 --retry-connrefused http://127.0.0.1:8080/healthz
           curl -fsS --retry 10 --retry-connrefused http://127.0.0.1:8081/healthz
-          for test in baselines planning git_delivery testing deployments capacity; do
+          for test in baselines planning git_delivery testing deployments capacity release_trains; do
             python3 "tests/${test}_http.py" http://127.0.0.1:8080 http://127.0.0.1:8081
           done
+      - name: Save rollout receipts and latency samples
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: train-acceptance
+          path: |
+            ${{ runner.temp }}/train-evidence/*.json
+            ${{ runner.temp }}/train-evidence/*.png
       - name: Print server logs on failure
         if: failure()
         run: tail -n 80 /tmp/delivery-{main,peer}.log
